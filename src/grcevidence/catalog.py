@@ -9,11 +9,19 @@ from typing import Any
 
 import yaml
 
-FRAMEWORKS = ("soc2", "iso27001", "nist_800_53")
+FRAMEWORKS = ("soc2", "iso27001", "nist_800_53", "fedramp_20x")
 FRAMEWORK_LABELS = {
     "soc2": "SOC 2 (Trust Services Criteria)",
     "iso27001": "ISO/IEC 27001:2022 Annex A",
     "nist_800_53": "NIST SP 800-53 Rev. 5",
+    "fedramp_20x": "FedRAMP 20x Key Security Indicators (Consolidated Rules 2026.09.13.02)",
+}
+FRAMEWORK_NOTES = {
+    "fedramp_20x": (
+        "KSIs are outcome statements, not controls. Which ones a provider must meet depends on "
+        "its FedRAMP Certification Class, and FedRAMP's own validation process decides whether "
+        "they are met. This table shows only where this tool's evidence is relevant."
+    ),
 }
 
 
@@ -23,7 +31,7 @@ def _load(name: str) -> Any:
 
 
 @lru_cache(maxsize=1)
-def controls() -> dict[str, dict[str, dict[str, str]]]:
+def controls() -> dict[str, dict[str, dict[str, Any]]]:
     return _load("controls.yaml")
 
 
@@ -109,6 +117,7 @@ def coverage_markdown() -> str:
             f"{len(auto)} of {len(tech)} technical controls have automated evidence; "
             f"{len(rows) - len(tech)} organizational controls are outside what collectors can evidence.",
             "",
+            *([FRAMEWORK_NOTES[fw], ""] if fw in FRAMEWORK_NOTES else []),
             "| Control | Title | Type | Automated evidence from |",
             "|---|---|---|---|",
         ]
@@ -131,14 +140,15 @@ def collectors_markdown() -> str:
         "",
         "*Global* collectors run once per account; *regional* ones run once per configured region.",
         "",
-        "| Collector | Scope | What it checks | SOC 2 | ISO 27001 | NIST 800-53 | Permissions |",
-        "|---|---|---|---|---|---|---|",
+        "| Collector | Scope | What it checks | SOC 2 | ISO 27001 | NIST 800-53 | FedRAMP 20x KSI | Permissions |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for cid, cls in load_all().items():
         m = controls_for(cid)
         perms = "<br>".join(f"`{p}`" for p in cls.permissions)
         lines.append(
             f"| `{cid}` | {cls.scope} | {cls.title} | {', '.join(m.get('soc2', []))} | "
-            f"{', '.join(m.get('iso27001', []))} | {', '.join(m.get('nist_800_53', []))} | {perms} |"
+            f"{', '.join(m.get('iso27001', []))} | {', '.join(m.get('nist_800_53', []))} | "
+            f"{', '.join(m.get('fedramp_20x', []))} | {perms} |"
         )
     return "\n".join(lines) + "\n"

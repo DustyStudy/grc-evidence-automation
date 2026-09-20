@@ -16,7 +16,7 @@ status         pass | fail | error | info | not_applicable
 summary        one line
 findings[]     {resource, message, severity}
 data           counts and configuration facts (no secrets, no resource contents)
-controls       {soc2: [...], iso27001: [...], nist_800_53: [...]}
+controls       {soc2: [...], iso27001: [...], nist_800_53: [...], fedramp_20x: [...]}
 schema_version, sha256
 ```
 
