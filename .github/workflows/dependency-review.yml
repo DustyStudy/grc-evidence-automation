@@ -29,6 +29,6 @@ jobs:
       # own documented usage (see SECURITY.md for this repo's pinning
       # rationale for well-established first-party/foundation actions).
       - name: Dependency Review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
