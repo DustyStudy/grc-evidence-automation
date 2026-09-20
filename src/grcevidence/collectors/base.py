@@ -77,6 +77,7 @@ class Result:
     findings: list[Finding] = field(default_factory=list)
     data: dict[str, Any] = field(default_factory=dict)
     status: Status | None = None  # override; default is PASS/FAIL from findings
+    truncated_at: int | None = None  # set to the cap when it cut the scan short
 
 
 class Collector:
@@ -132,7 +133,24 @@ class Collector:
                 ctx, Status.ERROR, f"Could not collect: {type(exc).__name__}", [finding]
             )
         status = result.status or (Status.FAIL if result.findings else Status.PASS)
-        return self._evidence(ctx, status, result.summary, result.findings, result.data)
+        findings, summary, data = result.findings, result.summary, result.data
+        if result.truncated_at is not None:
+            # Only part of the estate was examined, so "no findings" proves nothing about the
+            # rest. Record that in the evidence and never let it read as a clean pass.
+            findings = [
+                *findings,
+                Finding(
+                    self.id,
+                    f"Incomplete: only the first {result.truncated_at} resource(s) were examined; "
+                    "raise parameters.max_items_per_check to cover the rest",
+                    Severity.MEDIUM,
+                ),
+            ]
+            summary = f"INCOMPLETE (cap of {result.truncated_at} reached): {summary}"
+            data = {**data, "truncated": True}
+            if status in {Status.PASS, Status.NOT_APPLICABLE}:
+                status = Status.ERROR
+        return self._evidence(ctx, status, summary, findings, data)
 
 
 # ---------------------------------------------------------------------- registry
@@ -175,13 +193,25 @@ def select(
     return chosen
 
 
-def paginate(client: Any, op: str, key: str, limit: int | None = None, **kwargs: Any) -> list[Any]:
-    """Collect items from a paginated boto3 call, capped at ``limit``."""
-    items: list[Any] = []
+class Capped(list[Any]):
+    """A list that remembers whether :func:`paginate` stopped at its item cap."""
+
+    truncated: bool = False
+
+
+def paginate(client: Any, op: str, key: str, limit: int | None = None, **kwargs: Any) -> Capped:
+    """Collect items from a paginated boto3 call, capped at ``limit``.
+
+    ``.truncated`` is True only when more than ``limit`` items exist, so a caller can
+    report an incomplete scan instead of presenting the first ``limit`` as everything.
+    """
+    items = Capped()
     for page in client.get_paginator(op).paginate(**kwargs):
         items.extend(page.get(key, []))
-        if limit is not None and len(items) >= limit:
-            return items[:limit]
+        if limit is not None and len(items) > limit:
+            capped = Capped(items[:limit])
+            capped.truncated = True
+            return capped
     return items
 
 

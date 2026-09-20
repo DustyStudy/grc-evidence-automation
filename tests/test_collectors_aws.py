@@ -501,3 +501,48 @@ def test_unexpected_client_error_in_collector_is_error(make_ctx, session, monkey
 )
 def test_partition_detection(make_ctx, region, partition):
     assert make_ctx(region).partition == partition
+
+
+# ------------------------------------------- an item cap must never read as a clean pass
+def test_kms_scan_cut_short_by_the_cap_is_incomplete_not_pass(make_ctx, session):
+    kms = session.client("kms")
+    for _ in range(3):
+        key_id = kms.create_key()["KeyMetadata"]["KeyId"]
+        kms.enable_key_rotation(KeyId=key_id)
+
+    complete = KmsRotation().execute(make_ctx())
+    assert complete.status == Status.PASS
+
+    capped = KmsRotation().execute(make_ctx(max_items_per_check=2))
+    assert capped.status == Status.ERROR
+    assert capped.data["truncated"] is True
+    assert capped.summary.startswith("INCOMPLETE")
+    assert any("Incomplete" in f.message for f in capped.findings)
+
+
+def test_security_groups_scan_cut_short_by_the_cap_is_incomplete_not_pass(make_ctx, session):
+    ec2 = session.client("ec2")
+    vpc = ec2.create_vpc(CidrBlock="10.0.0.0/16")["Vpc"]["VpcId"]
+    for i in range(3):
+        ec2.create_security_group(GroupName=f"quiet-{i}", Description="d", VpcId=vpc)
+
+    assert NetworkExposure().execute(make_ctx()).status == Status.PASS
+    capped = NetworkExposure().execute(make_ctx(max_items_per_check=2))
+    assert capped.status == Status.ERROR and capped.data["truncated"] is True
+
+
+def test_cap_reached_exactly_is_not_reported_as_truncated(make_ctx, session):
+    kms = session.client("kms")
+    for _ in range(2):
+        key_id = kms.create_key()["KeyMetadata"]["KeyId"]
+        kms.enable_key_rotation(KeyId=key_id)
+    ev = KmsRotation().execute(make_ctx(max_items_per_check=2))
+    assert ev.status == Status.PASS and "truncated" not in ev.data
+
+
+def test_findings_still_win_over_the_incomplete_marker(make_ctx, session):
+    kms = session.client("kms")
+    for _ in range(3):
+        kms.create_key()  # rotation off -> real findings
+    ev = KmsRotation().execute(make_ctx(max_items_per_check=2))
+    assert ev.status == Status.FAIL and ev.data["truncated"] is True

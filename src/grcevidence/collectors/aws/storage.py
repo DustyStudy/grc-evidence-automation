@@ -53,6 +53,7 @@ class S3Security(Collector):
                 "buckets_without_versioning": unversioned,
                 "truncated": truncated,
             },
+            truncated_at=limit if truncated else None,
         )
 
     @staticmethod
@@ -125,9 +126,8 @@ class KmsRotation(Collector):
 
     def collect(self, ctx: Context) -> Result:
         kms = ctx.client("kms")
-        key_ids = [
-            k["KeyId"] for k in paginate(kms, "list_keys", "Keys", ctx.params.max_items_per_check)
-        ]
+        keys = paginate(kms, "list_keys", "Keys", ctx.params.max_items_per_check)
+        key_ids = [k["KeyId"] for k in keys]
         findings: list[Finding] = []
         examined = rotating = 0
         for key_id in key_ids:
@@ -151,6 +151,7 @@ class KmsRotation(Collector):
             findings=findings,
             data={"keys_examined": examined, "keys_rotating": rotating},
             status=Status.NOT_APPLICABLE if examined == 0 else None,
+            truncated_at=ctx.params.max_items_per_check if keys.truncated else None,
         )
 
 
@@ -195,6 +196,7 @@ class EncryptionAtRest(Collector):
                 "rds_instances": len(instances),
                 "rds_unencrypted": len(unencrypted),
             },
+            truncated_at=ctx.params.max_items_per_check if instances.truncated else None,
         )
 
 
@@ -237,4 +239,5 @@ class Backups(Collector):
             summary=f"{len(instances)} RDS instance(s), {len(plans)} AWS Backup plan(s); {len(findings)} finding(s)",
             findings=findings,
             data=data,
+            truncated_at=ctx.params.max_items_per_check if instances.truncated else None,
         )

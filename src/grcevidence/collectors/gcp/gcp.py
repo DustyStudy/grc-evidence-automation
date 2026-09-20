@@ -45,7 +45,9 @@ class GcsBuckets(Collector):
     permissions = ("storage.buckets.list", "storage.buckets.get")
 
     def collect(self, ctx: Context) -> Result:
-        buckets = list(_clients(ctx).storage().list_buckets())[: ctx.params.max_items_per_check]
+        cap = ctx.params.max_items_per_check
+        all_buckets = list(_clients(ctx).storage().list_buckets())
+        buckets = all_buckets[:cap]
         findings: list[Finding] = []
         for b in buckets:
             iam = b.iam_configuration
@@ -65,6 +67,7 @@ class GcsBuckets(Collector):
             summary=f"{len(buckets)} bucket(s) examined; {len(findings)} finding(s)",
             findings=findings,
             data={"buckets_examined": len(buckets)},
+            truncated_at=cap if len(all_buckets) > cap else None,
         )
 
 
