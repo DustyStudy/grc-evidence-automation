@@ -103,6 +103,28 @@ def test_every_framework_has_some_automated_coverage_and_markdown_renders():
     assert "technical (gap)" in md and "SOC 2" in md and "NIST" in md
 
 
+def test_ksi_mappings_share_an_800_53_control_with_the_collector():
+    """A collector->KSI link must be backed by FedRAMP's own KSI->800-53 association."""
+    ksis = catalog.controls()["fedramp_20x"]
+    for cid, by_fw in catalog.collector_map().items():
+        collector_controls = set(by_fw.get("nist_800_53", []))
+        for ksi in by_fw.get("fedramp_20x", []):
+            assert collector_controls & set(ksis[ksi]["nist_800_53"]), (
+                f"{cid} -> {ksi}: no shared 800-53 control"
+            )
+
+
+def test_ksi_catalog_is_well_formed_and_mapped_ksis_are_technical():
+    ksis = catalog.controls()["fedramp_20x"]
+    assert all(
+        k.startswith("KSI-") and m["type"] in {"technical", "organizational"}
+        for k, m in ksis.items()
+    )
+    for cid, by_fw in catalog.collector_map().items():
+        for ksi in by_fw.get("fedramp_20x", []):
+            assert ksis[ksi]["type"] == "technical", f"{cid} maps to organizational {ksi}"
+
+
 def test_committed_coverage_doc_is_current():
     from pathlib import Path
 

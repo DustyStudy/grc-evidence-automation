@@ -109,3 +109,58 @@ cloud API can supply.
 | SC-28 | Protection of information at rest | technical | `aws.s3_security`, `aws.encryption_at_rest`, `gcp.storage_buckets` |
 | SI-4 | System monitoring | technical | `aws.threat_detection` |
 
+## FedRAMP 20x Key Security Indicators (Consolidated Rules 2026.09.13.02)
+
+18 of 31 technical controls have automated evidence; 15 organizational controls are outside what collectors can evidence.
+
+KSIs are outcome statements, not controls. Which ones a provider must meet depends on its FedRAMP Certification Class, and FedRAMP's own validation process decides whether they are met. This table shows only where this tool's evidence is relevant.
+
+| Control | Title | Type | Automated evidence from |
+|---|---|---|---|
+| KSI-CED-RAT | Reviewing All Training | organizational | - |
+| KSI-CMT-LMC | Logging Changes | technical | `aws.cloudtrail`, `aws.config_recorder` |
+| KSI-CMT-RMV | Redeploying vs Modifying | technical (gap) | - |
+| KSI-CMT-RVP | Reviewing Change Procedures | organizational | - |
+| KSI-CMT-VTD | Validating Throughout Deployment | technical (gap) | - |
+| KSI-CNA-DFP | Defining Functionality and Privileges | technical (gap) | - |
+| KSI-CNA-EIS | Enforcing Intended State | technical (gap) | - |
+| KSI-CNA-IBP | Implementing Best Practices | technical (gap) | - |
+| KSI-CNA-MAT | Minimizing Attack Surface | technical | `aws.network_exposure`, `gcp.firewall_exposure` |
+| KSI-CNA-OFA | Optimizing for Availability | technical (gap) | - |
+| KSI-CNA-RNT | Restricting Network Traffic | technical | `aws.network_exposure`, `aws.vpc_flow_logs`, `gcp.firewall_exposure` |
+| KSI-CNA-RVP | Reviewing Protections | technical (gap) | - |
+| KSI-CNA-ULN | Using Logical Networking | technical | `aws.network_exposure`, `aws.vpc_flow_logs`, `gcp.firewall_exposure` |
+| KSI-IAM-AAM | Automating Account Management | technical | `aws.iam_access_keys`, `aws.iam_privileged_access` |
+| KSI-IAM-APM | Adopting Passwordless Methods | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys` |
+| KSI-IAM-ELP | Ensuring Least Privilege | technical | `aws.iam_privileged_access`, `aws.s3_security`, `gcp.storage_buckets` |
+| KSI-IAM-JIT | Authorizing Just-in-Time | technical | `aws.iam_privileged_access` |
+| KSI-IAM-SNU | Securing Non-User Authentication | technical | `aws.iam_access_keys` |
+| KSI-IAM-SUS | Responding to Suspicious Activity | technical (gap) | - |
+| KSI-INR-AAR | Generating After Action Reports | organizational | - |
+| KSI-INR-RIR | Reviewing Incident Response Procedures | organizational | - |
+| KSI-INR-RPI | Reviewing Past Incidents | organizational | - |
+| KSI-MLA-ALA | Authorizing Log Access | technical (gap) | - |
+| KSI-MLA-EVC | Evaluating Configurations | technical | `aws.config_recorder` |
+| KSI-MLA-LET | Logging Event Types | technical | `aws.cloudtrail`, `aws.vpc_flow_logs` |
+| KSI-MLA-OSM | Operating SIEM Capability | technical | `aws.cloudtrail` |
+| KSI-MLA-RVL | Reviewing Logs | technical | `aws.threat_detection` |
+| KSI-PIY-GIV | Generating Inventories | technical | `aws.config_recorder` |
+| KSI-PIY-RES | Reviewing Executive Support | organizational | - |
+| KSI-PIY-RIS | Reviewing Investments in Security | organizational | - |
+| KSI-PIY-RSD | Reviewing Security in the SDLC | organizational | - |
+| KSI-PIY-RVD | Reviewing Vulnerability Disclosures | organizational | - |
+| KSI-RPL-ABO | Aligning Backups with Objectives | technical | `aws.backups` |
+| KSI-RPL-ARP | Aligning Recovery Plan | organizational | - |
+| KSI-RPL-RRO | Reviewing Recovery Objectives | organizational | - |
+| KSI-RPL-TRC | Testing Recovery Capabilities | technical (gap) | - |
+| KSI-SCR-MIT | Mitigating Supply Chain Risk | organizational | - |
+| KSI-SCR-MON | Monitoring Supply Chain Risk | technical (gap) | - |
+| KSI-SVC-ACM | Automating Configuration Management | technical | `aws.config_recorder` |
+| KSI-SVC-ASM | Automating Secret Management | technical | `aws.kms_rotation` |
+| KSI-SVC-EIS | Evaluating and Improving Security | organizational | - |
+| KSI-SVC-PRR | Preventing Residual Risk | organizational | - |
+| KSI-SVC-RUD | Removing Unwanted Data | organizational | - |
+| KSI-SVC-SIN | Securing Information | technical | `aws.s3_security`, `aws.kms_rotation`, `aws.encryption_at_rest`, `gcp.storage_buckets` |
+| KSI-SVC-VCM | Validating Communications | technical (gap) | - |
+| KSI-SVC-VRI | Validating Resource Integrity | technical (gap) | - |
+

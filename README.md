@@ -4,9 +4,9 @@
 [![CodeQL](https://github.com/DustyStudy/grc-evidence-automation/actions/workflows/codeql.yml/badge.svg)](https://github.com/DustyStudy/grc-evidence-automation/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**Scheduled, tamper-evident cloud control evidence, mapped to SOC 2, ISO/IEC 27001:2022 and NIST SP 800-53.**
+**Scheduled, tamper-evident cloud control evidence, mapped to SOC 2, ISO/IEC 27001:2022, NIST SP 800-53 and FedRAMP 20x Key Security Indicators.**
 
-Read-only Python collectors gather configuration evidence from AWS (and optionally GCP), tag each record with the SOC 2 criteria, ISO 27001 Annex A controls and NIST 800-53 controls it is relevant to, seal it with a SHA-256, and deliver it on a schedule to an encrypted S3 evidence store and/or a GRC-platform ingestion API. Deploys as a Lambda with Terraform.
+Read-only Python collectors gather configuration evidence from AWS (and optionally GCP), tag each record with the SOC 2 criteria, ISO 27001 Annex A controls, NIST 800-53 controls and FedRAMP 20x KSIs it is relevant to, seal it with a SHA-256, and deliver it on a schedule to an encrypted S3 evidence store and/or a GRC-platform ingestion API. Deploys as a Lambda with Terraform.
 
 ```mermaid
 flowchart LR
@@ -20,14 +20,14 @@ flowchart LR
   L -. errors .-> A[CloudWatch alarm]
 ```
 
-Built for the "evidence, not screenshots" problem: the same crosswalk idea as a FedRAMP control mapping (`NIST 800-53` is included as a third framework so an existing 800-53 control set maps straight across), applied to the SOC 2 / ISO 27001 world where an auditor samples evidence over a period.
+Built for the "evidence, not screenshots" problem: a crosswalk in the spirit of FedRAMP control mapping, applied to the SOC 2 / ISO 27001 world where an auditor samples evidence over a period. `NIST 800-53` is included so an existing 800-53 control set maps straight across, and `fedramp_20x` maps the same evidence to the 46 [FedRAMP 20x Key Security Indicators](https://github.com/FedRAMP/rules) (Consolidated Rules 2026.09.13.02).
 
 ## What you get
 
 | | |
 |---|---|
 | **15 collectors** | IAM (MFA, password policy, access-key hygiene, admin principals), S3 exposure and encryption, CloudTrail, KMS rotation, EBS/RDS encryption, security-group exposure, GuardDuty/Security Hub, AWS Config, VPC flow logs, backups; GCP Cloud Storage and firewall exposure. [Reference](docs/collectors.md) |
-| **Control crosswalk** | Every collector maps to SOC 2 criteria, ISO 27001:2022 Annex A and NIST 800-53 controls, kept in [`collector_map.yaml`](src/grcevidence/data/collector_map.yaml) and validated in CI. |
+| **Control crosswalk** | Every collector maps to SOC 2 criteria, ISO 27001:2022 Annex A, NIST 800-53 controls and FedRAMP 20x KSIs, kept in [`collector_map.yaml`](src/grcevidence/data/collector_map.yaml) and validated in CI. |
 | **Honest coverage report** | Shows which controls have automated evidence, and which technical controls are gaps. Organizational controls (policies, board oversight, HR) are marked as outside what any collector can prove. [SOC 2 / ISO / NIST coverage](docs/coverage.md) |
 | **Integrity** | Every record and every run manifest carries a SHA-256. `grc-evidence verify` detects edited, missing and extra files. |
 | **Failures are visible** | A check that cannot run (denied, throttled, service error) becomes an `error` record, never a silent pass. A failed delivery raises, so the Lambda alarm fires instead of leaving a quiet gap. |
@@ -47,7 +47,7 @@ grc-evidence collectors
 # Collect from the account your credentials point at, into ./evidence
 grc-evidence collect --output ./evidence --regions us-east-1
 grc-evidence verify ./evidence
-grc-evidence report ./evidence --framework soc2      # or iso27001, nist_800_53
+grc-evidence report ./evidence --framework soc2      # or iso27001, nist_800_53, fedramp_20x
 ```
 
 A collected record ([sample](docs/sample-evidence.json), [sample SOC 2 rollup](docs/sample-report.md)):
@@ -59,7 +59,7 @@ A collected record ([sample](docs/sample-evidence.json), [sample SOC 2 rollup](d
   "region": "us-east-1",
   "status": "fail",
   "summary": "2 security group(s) examined; 1 expose sensitive ports to the internet",
-  "controls": {"soc2": ["CC6.6"], "iso27001": ["A.8.20", "A.8.22"], "nist_800_53": ["SC-7"]},
+  "controls": {"soc2": ["CC6.6"], "iso27001": ["A.8.20", "A.8.22"], "nist_800_53": ["SC-7"], "fedramp_20x": ["KSI-CNA-MAT", "KSI-CNA-RNT", "KSI-CNA-ULN"]},
   "findings": [{"resource": "sg-e70e... (legacy-bastion)", "message": "Port 22/tcp open to the internet", "severity": "high"}],
   "sha256": "639dd515fc0567bc2a89e2c63605b43b5adbca3d1efc7a47d5ae1672b5b8e6b1"
 }
@@ -134,6 +134,7 @@ The HTTP sink is intentionally vendor-neutral. It POSTs this project's JSON sche
 - It does **not** establish that a control is effective or that you are compliant. Auditors decide that, and for SOC 2 they choose the criteria in scope. Mapping a collector to a criterion means "relevant to", not "satisfies".
 - Organizational criteria (governance, HR, vendor management, incident response) need documents and records outside any cloud API. They are listed in the coverage report as such.
 - Thresholds (key age, password length, backup retention) default to common benchmark values. Set them to what your policy says, because that is what gets tested.
+- The FedRAMP 20x mapping is *relevant-to* evidence for the machine-checkable part of a KSI. It is not a FedRAMP authorization artifact, is not in FedRAMP's machine-readable submission format, and does not replace validation by FedRAMP or an assessor. Which KSIs apply depends on your Certification Class, and FedRAMP revises the KSI set, so the catalog pins the version it was built from.
 - Control titles are short paraphrases, not the standards' text. Check the crosswalk with your auditor before relying on it.
 
 ## Limitations

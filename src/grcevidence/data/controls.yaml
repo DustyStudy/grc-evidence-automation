@@ -6,6 +6,15 @@
 # iso27001:     ISO/IEC 27001:2022 Annex A (technological controls and the access /
 #               cloud / continuity controls relevant to these collectors).
 # nist_800_53:  NIST SP 800-53 Rev. 5 controls referenced by the FedRAMP baselines.
+# fedramp_20x:  FedRAMP 20x Key Security Indicators (KSIs), from the "FedRAMP Consolidated
+#               Rules for 2026" dataset, version 2026.09.13.02 (2026-09-13), published at
+#               https://github.com/FedRAMP/rules. All 46 KSIs are listed. Each carries the
+#               800-53 base controls FedRAMP associates with it (enhancements collapsed to
+#               the base control); a test checks every collector->KSI mapping shares at
+#               least one. Which KSIs a provider must meet depends on its Certification
+#               Class (A-D): KSI-CNA-EIS, KSI-MLA-ALA, KSI-SVC-PRR, KSI-SVC-RUD and
+#               KSI-SVC-VCM are optional at Class B. FedRAMP revises this dataset, so
+#               re-check it before relying on the catalog.
 #
 # Titles are short paraphrases for readability, not the standards' official text.
 # Mapping a collector to a criterion means "this evidence is relevant to the
@@ -98,3 +107,51 @@ nist_800_53:
   SC-13: {title: "Cryptographic protection", type: technical}
   SC-28: {title: "Protection of information at rest", type: technical}
   SI-4: {title: "System monitoring", type: technical}
+
+fedramp_20x:
+  KSI-CED-RAT: {title: "Reviewing All Training", type: organizational, nist_800_53: [AT-2, AT-3, AT-4, CP-3, IR-2, PS-6, SR-11]}
+  KSI-CMT-LMC: {title: "Logging Changes", type: technical, nist_800_53: [AU-2, CM-3, CM-4, CM-6, CM-8, MA-2]}
+  KSI-CMT-RMV: {title: "Redeploying vs Modifying", type: technical, nist_800_53: [CM-2, CM-3, CM-5, CM-6, CM-7, CM-8, SI-3]}
+  KSI-CMT-RVP: {title: "Reviewing Change Procedures", type: organizational, nist_800_53: [CM-3, CM-5, CM-7, CM-9]}
+  KSI-CMT-VTD: {title: "Validating Throughout Deployment", type: technical, nist_800_53: [CM-3, CM-4, SI-2]}
+  KSI-CNA-DFP: {title: "Defining Functionality and Privileges", type: technical, nist_800_53: [CM-2, SI-3]}
+  KSI-CNA-EIS: {title: "Enforcing Intended State", type: technical, nist_800_53: [CA-2, CA-7]}
+  KSI-CNA-IBP: {title: "Implementing Best Practices", type: technical, nist_800_53: [AC-17, CM-2, PL-10]}
+  KSI-CNA-MAT: {title: "Minimizing Attack Surface", type: technical, nist_800_53: [AC-17, AC-18, AC-20, CA-9, SC-7, SC-8, SC-10, SI-10, SI-11, SI-16]}
+  KSI-CNA-OFA: {title: "Optimizing for Availability", type: technical, nist_800_53: []}
+  KSI-CNA-RNT: {title: "Restricting Network Traffic", type: technical, nist_800_53: [AC-17, CA-9, CM-7, SC-7, SI-8]}
+  KSI-CNA-RVP: {title: "Reviewing Protections", type: technical, nist_800_53: [SC-5, SI-8]}
+  KSI-CNA-ULN: {title: "Using Logical Networking", type: technical, nist_800_53: [AC-12, AC-17, CA-9, SC-4, SC-7, SC-8, SC-10]}
+  KSI-IAM-AAM: {title: "Automating Account Management", type: technical, nist_800_53: [AC-2, AC-6, IA-4, IA-12]}
+  KSI-IAM-APM: {title: "Adopting Passwordless Methods", type: technical, nist_800_53: [AC-2, AC-3, IA-2, IA-5, IA-6, IA-8, SC-23]}
+  KSI-IAM-ELP: {title: "Ensuring Least Privilege", type: technical, nist_800_53: [AC-2, AC-3, AC-4, AC-6, AC-12, AC-14, AC-17, AC-20, CM-2, CM-9, IA-2, IA-3, IA-4, IA-5, IA-11, PS-2, PS-3, PS-4, PS-5, PS-6, SC-4, SC-20, SC-21, SC-22, SC-23, SC-39, SI-3]}
+  KSI-IAM-JIT: {title: "Authorizing Just-in-Time", type: technical, nist_800_53: [AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-17, AC-20, AU-9, CM-5, CM-7, CM-9, IA-4, IA-7, PS-2, PS-3, PS-4, PS-5, PS-6, PS-9, RA-5, SC-2, SC-23, SC-39]}
+  KSI-IAM-SNU: {title: "Securing Non-User Authentication", type: technical, nist_800_53: [AC-2, AC-4, AC-6, IA-3, IA-5, RA-5]}
+  KSI-IAM-SUS: {title: "Responding to Suspicious Activity", type: technical, nist_800_53: [AC-2, AC-7, PS-4, PS-8]}
+  KSI-INR-AAR: {title: "Generating After Action Reports", type: organizational, nist_800_53: [IR-3, IR-4, IR-8]}
+  KSI-INR-RIR: {title: "Reviewing Incident Response Procedures", type: organizational, nist_800_53: [IR-4, IR-6, IR-7, IR-8, SI-4]}
+  KSI-INR-RPI: {title: "Reviewing Past Incidents", type: organizational, nist_800_53: [IR-3, IR-4, IR-5, IR-8]}
+  KSI-MLA-ALA: {title: "Authorizing Log Access", type: technical, nist_800_53: [SI-11]}
+  KSI-MLA-EVC: {title: "Evaluating Configurations", type: technical, nist_800_53: [CA-7, CM-2, CM-6, SI-7]}
+  KSI-MLA-LET: {title: "Logging Event Types", type: technical, nist_800_53: [AC-2, AC-6, AC-17, AC-20, AU-2, AU-7, AU-12, SI-4, SI-7]}
+  KSI-MLA-OSM: {title: "Operating SIEM Capability", type: technical, nist_800_53: [AC-17, AC-20, AU-2, AU-3, AU-4, AU-5, AU-6, AU-7, AU-8, AU-9, AU-11, IR-4, SI-4, SI-7]}
+  KSI-MLA-RVL: {title: "Reviewing Logs", type: technical, nist_800_53: [AC-2, AC-6, AU-2, AU-6, SI-4]}
+  KSI-PIY-GIV: {title: "Generating Inventories", type: technical, nist_800_53: [CM-2, CM-7, CM-8, CM-12, CP-2]}
+  KSI-PIY-RES: {title: "Reviewing Executive Support", type: organizational, nist_800_53: []}
+  KSI-PIY-RIS: {title: "Reviewing Investments in Security", type: organizational, nist_800_53: [AC-5, CA-2, CP-2, CP-4, IR-3, PM-3, SA-2, SA-3, SR-2]}
+  KSI-PIY-RSD: {title: "Reviewing Security in the SDLC", type: organizational, nist_800_53: [AC-5, AU-3, CM-3, PL-8, PM-7, SA-3, SA-8, SC-4, SC-18, SI-10, SI-11, SI-16]}
+  KSI-PIY-RVD: {title: "Reviewing Vulnerability Disclosures", type: organizational, nist_800_53: [RA-5]}
+  KSI-RPL-ABO: {title: "Aligning Backups with Objectives", type: technical, nist_800_53: [CM-2, CP-6, CP-9, CP-10, SI-12]}
+  KSI-RPL-ARP: {title: "Aligning Recovery Plan", type: organizational, nist_800_53: [CP-2, CP-4, CP-6, CP-7, CP-8, CP-10]}
+  KSI-RPL-RRO: {title: "Reviewing Recovery Objectives", type: organizational, nist_800_53: [CP-2, CP-10]}
+  KSI-RPL-TRC: {title: "Testing Recovery Capabilities", type: technical, nist_800_53: [CP-2, CP-4, CP-6, CP-9, CP-10, IR-3]}
+  KSI-SCR-MIT: {title: "Mitigating Supply Chain Risk", type: organizational, nist_800_53: [AC-20, CA-7, RA-3, SA-9, SA-10, SA-11, SA-15, SA-22, SC-18, SI-7, SR-5, SR-6]}
+  KSI-SCR-MON: {title: "Monitoring Supply Chain Risk", type: technical, nist_800_53: [AC-20, CA-3, IR-6, PS-7, RA-5, SA-9, SI-5, SR-5, SR-6, SR-8]}
+  KSI-SVC-ACM: {title: "Automating Configuration Management", type: technical, nist_800_53: [AC-2, CM-2, CM-6, CM-7, PL-9, PL-10, SA-5, SI-5, SR-10]}
+  KSI-SVC-ASM: {title: "Automating Secret Management", type: technical, nist_800_53: [AC-17, IA-5, SC-12, SC-17]}
+  KSI-SVC-EIS: {title: "Evaluating and Improving Security", type: organizational, nist_800_53: [CM-7, CM-12, MA-2, PL-8, SC-7, SC-39, SI-2, SI-4, SR-10]}
+  KSI-SVC-PRR: {title: "Preventing Residual Risk", type: organizational, nist_800_53: [SC-4]}
+  KSI-SVC-RUD: {title: "Removing Unwanted Data", type: organizational, nist_800_53: [SI-12, SI-18]}
+  KSI-SVC-SIN: {title: "Securing Information", type: technical, nist_800_53: [AC-1, AC-17, CP-9, SC-8, SC-13, SC-20, SC-21, SC-22, SC-23, SC-28]}
+  KSI-SVC-VCM: {title: "Validating Communications", type: technical, nist_800_53: [SC-23, SI-7]}
+  KSI-SVC-VRI: {title: "Validating Resource Integrity", type: technical, nist_800_53: [CM-2, CM-8, SC-13, SC-23, SI-7, SR-10]}
