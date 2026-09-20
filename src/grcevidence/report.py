@@ -22,15 +22,34 @@ def latest_run_dir(path: Path) -> Path:
     return runs[-1]
 
 
+def _is_plain_filename(name: object) -> bool:
+    """A manifest may only name files directly inside its own run directory.
+
+    The manifest is data read from disk. Without this check ``"file": "../../x.json"`` or an
+    absolute path would make the verifier and the report read (and vouch for) files outside the
+    run directory.
+    """
+    return (
+        isinstance(name, str)
+        and name not in {"", ".", "..", "manifest.json"}
+        and Path(name).name == name
+        and "\\" not in name
+        and name.endswith(".json")
+    )
+
+
 def load_run(path: str | Path) -> tuple[RunManifest, list[Evidence]]:
     run_dir = latest_run_dir(Path(path))
     manifest = RunManifest.from_dict(
         json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     )
-    evidence = [
-        Evidence.from_dict(json.loads((run_dir / item["file"]).read_text(encoding="utf-8")))
-        for item in manifest.evidence
-    ]
+    evidence = []
+    for item in manifest.evidence:
+        if not _is_plain_filename(item.get("file")):
+            raise ValueError(f"manifest lists an unsafe evidence file name: {item.get('file')!r}")
+        evidence.append(
+            Evidence.from_dict(json.loads((run_dir / item["file"]).read_text(encoding="utf-8")))
+        )
     return manifest, evidence
 
 
@@ -43,7 +62,12 @@ def verify_run(path: str | Path) -> list[str]:
     )
     if not manifest.verify():
         problems.append("manifest hash does not match its contents")
-    listed = {item["file"]: item for item in manifest.evidence}
+    listed = {}
+    for item in manifest.evidence:
+        if not _is_plain_filename(item.get("file")):
+            problems.append(f"manifest lists an unsafe evidence file name: {item.get('file')!r}")
+            continue
+        listed[item["file"]] = item
     on_disk = {p.name for p in run_dir.glob("*.json")} - {"manifest.json"}
     for extra in sorted(on_disk - set(listed)):
         problems.append(f"{extra}: present on disk but not in manifest")
@@ -110,6 +134,22 @@ def rollup(evidence: list[Evidence], framework: str) -> list[ControlStatus]:
     return rows
 
 
+def _cell(text: str) -> str:
+    """Make evidence-derived text safe inside one markdown table cell.
+
+    Resource names and messages come from the assessed environment (or from an evidence
+    directory of unknown origin), so they must not be able to end the cell, start a new row
+    or inject markup into a report a reviewer will open.
+    """
+    return (
+        text.replace("|", "/")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def report_markdown(manifest: RunManifest, evidence: list[Evidence], framework: str) -> str:
     rows = rollup(evidence, framework)
     counts: dict[str, int] = {}
@@ -118,7 +158,8 @@ def report_markdown(manifest: RunManifest, evidence: list[Evidence], framework: 
     lines = [
         f"# {FRAMEWORK_LABELS[framework]}: control evidence status",
         "",
-        f"Run `{manifest.run_id}` ({manifest.started_at}), accounts: {', '.join(manifest.accounts) or 'none'}",
+        f"Run `{_cell(manifest.run_id)}` ({_cell(manifest.started_at)}), "
+        f"accounts: {_cell(', '.join(manifest.accounts)) or 'none'}",
         "",
         "**Read this as a triage view, not an audit conclusion.** Automated evidence shows configuration "
         "state at collection time; control effectiveness is the auditor's judgement. `error` means the "
@@ -132,7 +173,7 @@ def report_markdown(manifest: RunManifest, evidence: list[Evidence], framework: 
         "|---|---|---|---|---|",
     ]
     for r in rows:
-        finds = "<br>".join(x.replace("|", "/") for x in r.failing[:3]) or "-"
+        finds = "<br>".join(_cell(x) for x in r.failing[:3]) or "-"
         lines.append(
             f"| {r.control} | {r.title} | {r.status} | {', '.join(r.evidence) or '-'} | {finds} |"
         )

@@ -180,7 +180,8 @@ class VpcFlowLogs(Collector):
     def collect(self, ctx: Context) -> Result:
         ec2 = ctx.client("ec2")
         cap = ctx.params.max_items_per_check
-        vpcs = [v["VpcId"] for v in paginate(ec2, "describe_vpcs", "Vpcs", cap)]
+        vpc_list = paginate(ec2, "describe_vpcs", "Vpcs", cap)
+        vpcs = [v["VpcId"] for v in vpc_list]
         flow_logs = paginate(ec2, "describe_flow_logs", "FlowLogs", cap * 4)
         covered = {
             f["ResourceId"] for f in flow_logs if f.get("FlowLogStatus", "ACTIVE") == "ACTIVE"
@@ -193,6 +194,7 @@ class VpcFlowLogs(Collector):
                 for v in missing
             ],
             data={"vpcs": len(vpcs), "vpcs_without_flow_logs": len(missing)},
+            truncated_at=cap if vpc_list.truncated or flow_logs.truncated else None,
         )
 
 
@@ -244,4 +246,5 @@ class NetworkExposure(Collector):
                 "exposed_groups": len(exposed),
                 "sensitive_ports": list(sensitive),
             },
+            truncated_at=ctx.params.max_items_per_check if groups.truncated else None,
         )

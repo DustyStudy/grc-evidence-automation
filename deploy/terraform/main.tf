@@ -192,6 +192,118 @@ resource "aws_s3_bucket_policy" "evidence" {
   depends_on = [aws_s3_bucket_public_access_block.evidence]
 }
 
+# ------------------------------------------------------ S3 server access logs
+# Who read or changed an evidence object is itself audit evidence. S3 server access logging
+# cannot deliver to a bucket whose default encryption is SSE-KMS (an AWS platform restriction),
+# so this terminal sink uses SSE-S3.
+resource "aws_s3_bucket" "access_logs" {
+  bucket = "${local.bucket}-logs"
+  tags   = var.tags
+}
+
+resource "aws_s3_bucket_ownership_controls" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "access_logs" {
+  bucket                  = aws_s3_bucket.access_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+
+  rule {
+    id     = "expire-access-logs"
+    status = "Enabled"
+
+    filter {}
+
+    expiration {
+      days = var.evidence_expiration_days
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+data "aws_iam_policy_document" "access_logs" {
+  statement {
+    sid       = "S3ServerAccessLogsPolicy"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.access_logs.arn}/*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["logging.s3.amazonaws.com"]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = [aws_s3_bucket.evidence.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [local.account_id]
+    }
+  }
+
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.access_logs.arn, "${aws_s3_bucket.access_logs.arn}/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  policy = data.aws_iam_policy_document.access_logs.json
+
+  depends_on = [aws_s3_bucket_public_access_block.access_logs]
+}
+
+resource "aws_s3_bucket_logging" "evidence" {
+  bucket        = aws_s3_bucket.evidence.id
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "access/"
+
+  depends_on = [aws_s3_bucket_policy.access_logs]
+}
+
 # ------------------------------------------------------------------------ Lambda
 resource "aws_cloudwatch_log_group" "function" {
   name              = "/aws/lambda/${var.name}"
@@ -211,7 +323,8 @@ resource "aws_lambda_function" "collector" {
   source_code_hash               = filebase64sha256(var.lambda_zip_path)
   timeout                        = 900
   memory_size                    = 512
-  reserved_concurrent_executions = 1 # runs must not overlap: they would produce duplicate evidence
+  reserved_concurrent_executions = 1                        # runs must not overlap: they would produce duplicate evidence
+  kms_key_arn                    = aws_kms_key.evidence.arn # encrypts GRC_CONFIG (accounts, role ARNs, sinks)
   tags                           = var.tags
 
   environment {
