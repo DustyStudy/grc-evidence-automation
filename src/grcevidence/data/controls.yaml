@@ -1,0 +1,100 @@
+# Control catalogs used for the crosswalk and coverage report.
+#
+# soc2:         AICPA 2017 Trust Services Criteria (with 2022 revised points of focus).
+#               `type: technical` criteria can be evidenced by system configuration;
+#               `organizational` ones need policies, minutes, HR records, etc.
+# iso27001:     ISO/IEC 27001:2022 Annex A (technological controls and the access /
+#               cloud / continuity controls relevant to these collectors).
+# nist_800_53:  NIST SP 800-53 Rev. 5 controls referenced by the FedRAMP baselines.
+#
+# Titles are short paraphrases for readability, not the standards' official text.
+# Mapping a collector to a criterion means "this evidence is relevant to the
+# criterion", not "this evidence satisfies it". Have your auditor confirm scope.
+soc2:
+  CC1.1: {title: "Commitment to integrity and ethical values", type: organizational}
+  CC1.2: {title: "Board independence and oversight of controls", type: organizational}
+  CC1.3: {title: "Structures, reporting lines and authorities", type: organizational}
+  CC1.4: {title: "Commitment to attract, develop and retain competent people", type: organizational}
+  CC1.5: {title: "Accountability for internal control responsibilities", type: organizational}
+  CC2.1: {title: "Uses relevant, quality information for internal control", type: organizational}
+  CC2.2: {title: "Internal communication of control objectives", type: organizational}
+  CC2.3: {title: "Communication with external parties", type: organizational}
+  CC3.1: {title: "Specifies suitable objectives", type: organizational}
+  CC3.2: {title: "Identifies and analyzes risks", type: organizational}
+  CC3.3: {title: "Considers potential for fraud", type: organizational}
+  CC3.4: {title: "Identifies and assesses changes affecting controls", type: organizational}
+  CC4.1: {title: "Ongoing and separate evaluations of controls", type: organizational}
+  CC4.2: {title: "Evaluates and communicates deficiencies", type: organizational}
+  CC5.1: {title: "Selects and develops control activities", type: organizational}
+  CC5.2: {title: "General controls over technology", type: technical}
+  CC5.3: {title: "Deploys controls through policies and procedures", type: organizational}
+  CC6.1: {title: "Logical access security software, infrastructure and architectures", type: technical}
+  CC6.2: {title: "User registration, authorization and credential issuance", type: technical}
+  CC6.3: {title: "Role-based access, least privilege and access removal", type: technical}
+  CC6.4: {title: "Physical access restrictions", type: organizational}
+  CC6.5: {title: "Disposal of logical and physical assets", type: organizational}
+  CC6.6: {title: "Protection against threats from outside system boundaries", type: technical}
+  CC6.7: {title: "Restricts transmission, movement and removal of information", type: technical}
+  CC6.8: {title: "Prevents and detects unauthorized or malicious software", type: technical}
+  CC7.1: {title: "Detects new vulnerabilities and configuration changes", type: technical}
+  CC7.2: {title: "Monitors system components for anomalies", type: technical}
+  CC7.3: {title: "Evaluates security events", type: technical}
+  CC7.4: {title: "Responds to security incidents", type: organizational}
+  CC7.5: {title: "Recovers from security incidents", type: organizational}
+  CC8.1: {title: "Authorizes, tests, approves and implements changes", type: technical}
+  CC9.1: {title: "Risk mitigation for business disruptions", type: organizational}
+  CC9.2: {title: "Vendor and business-partner risk management", type: organizational}
+  A1.1: {title: "Capacity management", type: technical}
+  A1.2: {title: "Environmental protections, backups and recovery infrastructure", type: technical}
+  A1.3: {title: "Tests recovery plan procedures", type: technical}
+  C1.1: {title: "Identifies and maintains confidential information", type: technical}
+  C1.2: {title: "Disposes of confidential information", type: organizational}
+
+iso27001:
+  A.5.15: {title: "Access control", type: technical}
+  A.5.16: {title: "Identity management", type: technical}
+  A.5.17: {title: "Authentication information", type: technical}
+  A.5.18: {title: "Access rights", type: technical}
+  A.5.23: {title: "Information security for use of cloud services", type: organizational}
+  A.5.30: {title: "ICT readiness for business continuity", type: technical}
+  A.8.1: {title: "User endpoint devices", type: technical}
+  A.8.2: {title: "Privileged access rights", type: technical}
+  A.8.3: {title: "Information access restriction", type: technical}
+  A.8.4: {title: "Access to source code", type: technical}
+  A.8.5: {title: "Secure authentication", type: technical}
+  A.8.6: {title: "Capacity management", type: technical}
+  A.8.7: {title: "Protection against malware", type: technical}
+  A.8.8: {title: "Management of technical vulnerabilities", type: technical}
+  A.8.9: {title: "Configuration management", type: technical}
+  A.8.10: {title: "Information deletion", type: technical}
+  A.8.11: {title: "Data masking", type: technical}
+  A.8.12: {title: "Data leakage prevention", type: technical}
+  A.8.13: {title: "Information backup", type: technical}
+  A.8.14: {title: "Redundancy of information processing facilities", type: technical}
+  A.8.15: {title: "Logging", type: technical}
+  A.8.16: {title: "Monitoring activities", type: technical}
+  A.8.17: {title: "Clock synchronization", type: technical}
+  A.8.20: {title: "Networks security", type: technical}
+  A.8.21: {title: "Security of network services", type: technical}
+  A.8.22: {title: "Segregation of networks", type: technical}
+  A.8.24: {title: "Use of cryptography", type: technical}
+  A.8.32: {title: "Change management", type: technical}
+
+nist_800_53:
+  AC-2: {title: "Account management", type: technical}
+  AC-3: {title: "Access enforcement", type: technical}
+  AC-6: {title: "Least privilege", type: technical}
+  AU-2: {title: "Event logging", type: technical}
+  AU-9: {title: "Protection of audit information", type: technical}
+  AU-12: {title: "Audit record generation", type: technical}
+  CM-2: {title: "Baseline configuration", type: technical}
+  CM-6: {title: "Configuration settings", type: technical}
+  CP-9: {title: "System backup", type: technical}
+  IA-2: {title: "Identification and authentication (organizational users)", type: technical}
+  IA-5: {title: "Authenticator management", type: technical}
+  RA-5: {title: "Vulnerability monitoring and scanning", type: technical}
+  SC-7: {title: "Boundary protection", type: technical}
+  SC-12: {title: "Cryptographic key establishment and management", type: technical}
+  SC-13: {title: "Cryptographic protection", type: technical}
+  SC-28: {title: "Protection of information at rest", type: technical}
+  SI-4: {title: "System monitoring", type: technical}

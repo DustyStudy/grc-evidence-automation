@@ -1,0 +1,5 @@
+# CODEOWNERS — auto-assign reviewers on PRs.
+# Solo-maintained project today; update this if the repo ever gains
+# additional maintainers.
+
+*   @DustyStudy

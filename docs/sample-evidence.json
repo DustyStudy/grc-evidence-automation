@@ -1,0 +1,39 @@
+{
+  "account": "123456789012",
+  "collected_at": "2026-09-20T06:00:00+00:00",
+  "collector": "aws.network_exposure",
+  "controls": {
+    "iso27001": [
+      "A.8.20",
+      "A.8.22"
+    ],
+    "nist_800_53": [
+      "SC-7"
+    ],
+    "soc2": [
+      "CC6.6"
+    ]
+  },
+  "data": {
+    "exposed_groups": 1,
+    "security_groups": 2,
+    "sensitive_ports": [
+      22,
+      3389
+    ]
+  },
+  "findings": [
+    {
+      "message": "Port 22/tcp open to the internet",
+      "resource": "sg-e70e730ea5b4180c0 (legacy-bastion)",
+      "severity": "high"
+    }
+  ],
+  "provider": "aws",
+  "region": "us-east-1",
+  "schema_version": "1.0",
+  "sha256": "639dd515fc0567bc2a89e2c63605b43b5adbca3d1efc7a47d5ae1672b5b8e6b1",
+  "status": "fail",
+  "summary": "2 security group(s) examined; 1 expose sensitive ports to the internet",
+  "title": "Security groups open to the internet"
+}

@@ -1,0 +1,43 @@
+# Example configuration. Validate by running:  grc-evidence collect --config examples/config.example.yaml --dry-run
+# (a dry run collects and prints results but writes nothing)
+accounts:
+  - id: "111111111111"
+    name: prod
+    role_arn: arn:aws:iam::111111111111:role/GrcEvidenceReader
+    external_id: replace-with-a-random-value-of-16-or-more-characters
+    regions: [us-east-1, us-west-2]
+  - id: "222222222222"
+    name: staging
+    role_arn: arn:aws:iam::222222222222:role/GrcEvidenceReader
+    external_id: replace-with-a-different-random-value
+
+regions: [us-east-1]
+
+collectors:
+  exclude: []        # e.g. [aws.backups]
+
+parameters:          # thresholds: set these to what YOUR policy says
+  max_access_key_age_days: 90
+  max_access_key_unused_days: 45
+  password_min_length: 14
+  password_reuse_prevention: 24
+  sensitive_ports: [22, 3389]
+  min_backup_retention_days: 7
+  require_securityhub: false
+
+gcp:
+  projects: []       # e.g. [my-project]; needs `pip install "grc-evidence-automation[gcp]"`
+
+sinks:
+  - type: local
+    path: ./evidence
+  - type: s3
+    bucket: my-evidence-bucket
+    prefix: evidence
+    kms_key_id: alias/grc-evidence
+  - type: http
+    url: https://ingest.example.com/v1/evidence
+    format: bundle
+    auth:
+      type: bearer
+      token: "secretsmanager:grc/ingest-token"
