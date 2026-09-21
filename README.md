@@ -3,6 +3,8 @@
 [![CI](https://github.com/DustyStudy/grc-evidence-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/DustyStudy/grc-evidence-automation/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/DustyStudy/grc-evidence-automation/actions/workflows/codeql.yml/badge.svg)](https://github.com/DustyStudy/grc-evidence-automation/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/DustyStudy/grc-evidence-automation/badge)](https://scorecard.dev/viewer/?uri=github.com/DustyStudy/grc-evidence-automation)
+[![Release](https://img.shields.io/github/v/release/DustyStudy/grc-evidence-automation)](https://github.com/DustyStudy/grc-evidence-automation/releases)
 
 **Scheduled, tamper-evident cloud control evidence, mapped to SOC 2, ISO/IEC 27001:2022, NIST SP 800-53 and FedRAMP 20x Key Security Indicators.**
 

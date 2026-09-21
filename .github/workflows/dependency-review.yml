@@ -25,10 +25,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # First-party GitHub action; pinned to major version tag per GitHub's
-      # own documented usage (see SECURITY.md for this repo's pinning
-      # rationale for well-established first-party/foundation actions).
+      # Pinned to a full commit SHA: upstream's `v5` ref is a moving branch, not an
+      # immutable tag. Dependabot updates the SHA and version comment.
       - name: Dependency Review
-        uses: actions/dependency-review-action@v5
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          # Keep strong-copyleft licences out of a tool others will run and embed.
+          deny-licenses: GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later
