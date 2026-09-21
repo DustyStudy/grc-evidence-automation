@@ -166,6 +166,10 @@ grc-evidence collectors --format markdown > docs/collectors.md
 
 Tests fail if these are stale. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Project health
+
+The [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/DustyStudy/grc-evidence-automation) badge reflects a young, solo-maintained project. Code-Review and Contributors need other people, and Maintained scores 0 for any repository under 90 days old. The checks about the code and supply chain (pinned dependencies, fuzzing, signed releases, token permissions, SAST, vulnerabilities) are the informative ones. `codeql-action` is left on its major tag deliberately, because GitHub gates some features on the tag.
+
 ## License
 
 MIT

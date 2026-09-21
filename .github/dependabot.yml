@@ -1,10 +1,16 @@
 version: 2
 updates:
+  # The hash-pinned files in requirements/ are compiled as one consistent set by scripts/lock.py.
+  # Dependabot would bump single transitive packages in isolation and leave the lock inconsistent,
+  # so it must not manage them. Refresh them with `python scripts/lock.py --upgrade`. Security
+  # alerts are unaffected by this setting.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"

@@ -36,13 +36,34 @@ class Parameters:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any] | None) -> Parameters:
+        if raw is not None and not isinstance(raw, dict):
+            raise ValueError("parameters must be a mapping")
         raw = dict(raw or {})
         known = set(cls.__dataclass_fields__)
         unknown = set(raw) - known
         if unknown:
             raise ValueError(f"unknown parameter(s): {sorted(unknown)}; known: {sorted(known)}")
+        for key, value in raw.items():
+            if key == "sensitive_ports":
+                continue
+            if key == "require_securityhub":
+                if not isinstance(value, bool):
+                    raise ValueError("parameters.require_securityhub must be true or false")
+            elif isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"parameters.{key} must be a non-negative integer")
         if "sensitive_ports" in raw:
-            raw["sensitive_ports"] = tuple(int(p) for p in raw["sensitive_ports"])
+            ports = raw["sensitive_ports"]
+            if not isinstance(ports, list | tuple):
+                raise ValueError("parameters.sensitive_ports must be a list of ports")
+            parsed = []
+            for port in ports:
+                # Numeric strings are accepted (they arrive that way from environment-based config).
+                if isinstance(port, str) and port.isascii() and port.isdigit():
+                    port = int(port)
+                if isinstance(port, bool) or not isinstance(port, int) or not 0 < port < 65536:
+                    raise ValueError(f"parameters.sensitive_ports has an invalid port: {port!r}")
+                parsed.append(port)
+            raw["sensitive_ports"] = tuple(parsed)
         return cls(**raw)
 
 

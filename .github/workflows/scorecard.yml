@@ -5,6 +5,7 @@ name: Scorecard
 # not uploaded to code scanning: several checks (Code-Review, Maintained, Fuzzing) score project
 # process, not code, and would show up as high-severity alerts on a solo-maintained repository.
 on:
+  workflow_dispatch: # run on demand, e.g. right after a release
   branch_protection_rule:
   schedule:
     - cron: "30 5 * * 1"

@@ -63,7 +63,10 @@ class Evidence:
 
     @property
     def filename(self) -> str:
-        return re.sub(r"[^A-Za-z0-9._-]+", "__", self.id) + ".json"
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "__", self.id)
+        if len(stem) > 180:  # stay well under common 255-byte name limits, and stay unique
+            stem = stem[:150] + "-" + hashlib.sha256(self.id.encode()).hexdigest()[:16]
+        return stem + ".json"
 
     def content_hash(self) -> str:
         """SHA-256 over everything except the hash itself."""
@@ -80,6 +83,10 @@ class Evidence:
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
+        # Keys of any type become strings exactly as they will after a write/read round trip,
+        # so the hash is the same before and after storage and sorting cannot fail on mixed keys.
+        d["data"] = _plain(d["data"])
+        d["controls"] = _plain(d["controls"])
         d["status"] = self.status.value
         d["findings"] = [
             {"resource": f.resource, "message": f.message, "severity": f.severity.value}
@@ -107,6 +114,11 @@ class Evidence:
             schema_version=d.get("schema_version", SCHEMA_VERSION),
             sha256=d.get("sha256", ""),
         )
+
+
+def _plain(value: Any) -> Any:
+    """Round-trip through JSON: what a value looks like once written to disk and read back."""
+    return json.loads(json.dumps(value, default=str))
 
 
 def canonical_json(obj: Any) -> bytes:

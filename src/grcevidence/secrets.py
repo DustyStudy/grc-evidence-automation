@@ -28,7 +28,10 @@ def resolve_secret(ref: str, session: Any = None) -> str:
             "secret must be a reference like env:NAME, secretsmanager:ID or ssm:/path (not a literal)"
         )
     if scheme == "env":
-        value = os.environ.get(rest)
+        try:
+            value = os.environ.get(rest)
+        except ValueError as exc:  # e.g. an embedded NUL character
+            raise SecretError(f"invalid environment variable name {rest!r}") from exc
         if not value:
             raise SecretError(f"environment variable {rest!r} is not set")
         return value
@@ -37,17 +40,29 @@ def resolve_secret(ref: str, session: Any = None) -> str:
 
         sess = session or boto3.Session()
         if scheme == "ssm":
-            return str(
-                sess.client("ssm").get_parameter(Name=rest, WithDecryption=True)["Parameter"][
-                    "Value"
-                ]
-            )
+            value = sess.client("ssm").get_parameter(Name=rest, WithDecryption=True)["Parameter"][
+                "Value"
+            ]
+            return _non_empty(value, f"ssm parameter {rest!r}")
         secret_id, _, key = rest.partition("#")
-        raw = sess.client("secretsmanager").get_secret_value(SecretId=secret_id)["SecretString"]
+        response = sess.client("secretsmanager").get_secret_value(SecretId=secret_id)
+        if "SecretString" not in response:  # a binary secret has no string form
+            raise SecretError(f"secret {secret_id!r} has no SecretString")
+        raw = response["SecretString"]
         if not key:
-            return str(raw)
+            return _non_empty(raw, f"secret {secret_id!r}")
         try:
-            return str(json.loads(raw)[key])
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            value = json.loads(raw)[key]
+        except (json.JSONDecodeError, KeyError, TypeError, IndexError) as exc:
             raise SecretError(f"secret {secret_id!r} has no JSON key {key!r}") from exc
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            value = str(value)  # numeric secrets (PINs, ids) are legitimate
+        return _non_empty(value, f"key {key!r} of secret {secret_id!r}")
     raise SecretError(f"unknown secret scheme {scheme!r}")
+
+
+def _non_empty(value: Any, what: str) -> str:
+    """A secret must be a non-empty string; never stringify null, a list or an object."""
+    if not isinstance(value, str) or not value:
+        raise SecretError(f"{what} is empty or is not a string")
+    return value
