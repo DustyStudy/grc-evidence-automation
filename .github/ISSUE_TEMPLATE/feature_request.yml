@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest a collector, control mapping, framework or sink
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What evidence or control are you trying to cover
+      description: Name the framework and control (for example SOC 2 CC7.1 or a FedRAMP 20x KSI) and the cloud service, not just the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

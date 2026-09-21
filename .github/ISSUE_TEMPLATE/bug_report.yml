@@ -1,0 +1,42 @@
+name: Bug report
+description: Something behaves differently from the documentation
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a **security issue** (a secret in evidence or logs, `verify` passing on modified evidence, over-broad IAM), do not file it here. Use the private link on the issue chooser page instead. Remove account ids, ARNs and real evidence from anything you paste.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The command or configuration (with secrets removed) and the relevant output.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: collector
+    attributes:
+      label: Collector id, if the problem is with one
+      placeholder: "aws.iam_mfa"
+  - type: input
+    id: version
+    attributes:
+      label: grc-evidence-automation version
+      placeholder: "0.1.0 (from `pip show grc-evidence-automation`)"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Python version, OS and where it runs
+      placeholder: "3.12, Lambda arm64 / macOS 15 / GovCloud"
+    validations:
+      required: true

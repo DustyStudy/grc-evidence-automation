@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - name: Harden Runner
@@ -52,7 +52,68 @@ jobs:
         run: mypy src
 
       - name: Pytest
-        run: pytest -v --cov=grcevidence --cov-report=term-missing
+        run: pytest -v --cov=grcevidence --cov-report=term-missing --cov-fail-under=90
+
+  cross-platform:
+    # The package claims Windows and macOS support (evidence is often collected from
+    # engineers' machines and CI runners), so run the suite there too. Kept separate from
+    # lint-and-test so that job's required check names stay stable.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package + dev dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Pytest
+        run: pytest -v
+
+  package:
+    # Catch packaging mistakes (missing data files, bad metadata) on every PR, and prove the
+    # built wheel works when installed on its own.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build sdist and wheel, check metadata
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: The installed wheel runs and ships its data files
+        run: |
+          python -m venv wheel-env
+          wheel-env/bin/python -m pip install dist/*.whl
+          wheel-env/bin/grc-evidence coverage --check
+          wheel-env/bin/grc-evidence collectors > /dev/null
 
   crosswalk:
     # The control mapping is data reviewed by GRC staff; fail fast if it is inconsistent.

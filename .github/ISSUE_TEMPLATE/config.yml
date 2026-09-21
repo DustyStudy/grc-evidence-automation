@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/DustyStudy/grc-evidence-automation/security/advisories/new
+    about: A collector or sink leaking a secret into evidence or logs, a way to make `verify` pass on modified evidence, or Terraform granting broader access than documented should be reported privately, not as a public issue.

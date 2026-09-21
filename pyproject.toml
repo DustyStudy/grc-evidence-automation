@@ -22,6 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
     "Typing :: Typed",
 ]
@@ -44,6 +45,12 @@ dev = [
     "types-PyYAML>=6.0",
     "boto3-stubs[iam,s3,cloudtrail,kms,ec2,rds,guardduty,securityhub,config,backup,sts,secretsmanager,ssm]>=1.34",
 ]
+
+[project.urls]
+Homepage = "https://github.com/DustyStudy/grc-evidence-automation"
+Issues = "https://github.com/DustyStudy/grc-evidence-automation/issues"
+Changelog = "https://github.com/DustyStudy/grc-evidence-automation/blob/main/CHANGELOG.md"
+Security = "https://github.com/DustyStudy/grc-evidence-automation/security/policy"
 
 [project.scripts]
 grc-evidence = "grcevidence.cli:main"

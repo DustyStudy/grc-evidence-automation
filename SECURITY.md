@@ -20,4 +20,6 @@ Worth reporting: a way for a collector or sink to leak a secret or resource cont
 
 - Workflows run with `contents: read`; third-party actions are pinned to full commit SHAs (first-party HashiCorp/GitHub actions that publish major-version tags are noted inline).
 - `step-security/harden-runner` runs in audit mode.
-- CodeQL on every push/PR and weekly; dependency review on PRs; Dependabot weekly for Python, GitHub Actions and Terraform.
+- CodeQL on every push/PR and weekly; dependency review on PRs (fails on high-severity findings and on GPL/AGPL licences); Dependabot weekly for Python, GitHub Actions and Terraform.
+- Releases are built by a tag-triggered workflow that attaches the wheel, sdist, Lambda deployment zip, a CycloneDX SBOM and a build provenance attestation to the GitHub Release. Verify an artifact with `gh attestation verify <file> --repo DustyStudy/grc-evidence-automation`.
+- An OpenSSF Scorecard workflow runs weekly and on pushes to `main`; results are published to the public Scorecard API (api.scorecard.dev).

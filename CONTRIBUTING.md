@@ -22,6 +22,8 @@ grc-evidence coverage --format markdown > docs/coverage.md
 grc-evidence collectors --format markdown > docs/collectors.md
 ```
 
+CI also runs the tests on Windows and macOS and on Python 3.11 to 3.13, with a 90% coverage floor, and builds the package. Add a line to `CHANGELOG.md` under "Unreleased" for user-visible changes.
+
 ## Adding or changing a collector
 
 1. Implement it under `src/grcevidence/collectors/` (see [ARCHITECTURE.md](docs/ARCHITECTURE.md#extending)).
