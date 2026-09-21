@@ -4,6 +4,8 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-21
+
 ### Added
 - Fuzz targets for the integrity-critical code (`fuzz/`): `verify` tamper detection, evidence hashing and the write/read round trip, the report renderer, the config and secret loaders, and the HTTP sink. They run as ordinary tests on a seed corpus and random inputs, and in CI with coverage-guided fuzzing (Atheris). Each target's ability to fail is itself tested.
 - Releases attach the attestation bundle (`*.sigstore.json` and `*.intoto.jsonl`) next to the artifacts, so they can be verified offline with `gh attestation verify --bundle`; the release workflow verifies every artifact against it before publishing.
@@ -41,5 +43,6 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 ### Security
 - Closed findings from a security scan (see the commit history for details).
 
-[Unreleased]: https://github.com/DustyStudy/grc-evidence-automation/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/DustyStudy/grc-evidence-automation/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/DustyStudy/grc-evidence-automation/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/DustyStudy/grc-evidence-automation/releases/tag/v0.1.0
