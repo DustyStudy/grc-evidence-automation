@@ -39,7 +39,7 @@ def test_the_runner_lists_every_target_and_compiles():
     )
     compile(source, "run_fuzzer.py", "exec")
     assert "import atheris" in source
-    assert set(TARGETS) == {"evidence", "verify", "report", "config", "secrets", "http_sink"}
+    assert set(TARGETS) == {"record", "verify", "report", "config", "secrets", "http_sink"}
 
 
 def test_reader_never_raises_on_any_input():
@@ -62,9 +62,9 @@ def _fails_within(name: str, exc=AssertionError, budget: int = 1500) -> None:
     pytest.fail(f"target {name!r} did not detect the injected bug in {budget} inputs")
 
 
-def test_evidence_target_detects_a_hash_that_ignores_content(monkeypatch):
+def test_record_target_detects_a_hash_that_ignores_content(monkeypatch):
     monkeypatch.setattr(targets.Evidence, "content_hash", lambda self: "constant")
-    _fails_within("evidence")
+    _fails_within("record")
 
 
 def test_verify_target_detects_a_verifier_that_misses_tampering(monkeypatch):

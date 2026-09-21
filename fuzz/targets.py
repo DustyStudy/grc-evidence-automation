@@ -163,7 +163,7 @@ def _write_run(root: Path, r: Reader) -> tuple[Path, RunResult]:
 # ------------------------------------------------------------------------------- targets
 
 
-def evidence(data: bytes) -> None:
+def record(data: bytes) -> None:
     """A sealed record has a safe filename, survives the write/read round trip and detects edits."""
     r = Reader(data)
     ev = _evidence(r, odd_keys=r.flag())
@@ -425,7 +425,7 @@ def http_sink(data: bytes) -> None:
 
 
 TARGETS: dict[str, Callable[[bytes], None]] = {
-    "evidence": evidence,
+    "record": record,
     "verify": verify,
     "report": report,
     "config": config,
