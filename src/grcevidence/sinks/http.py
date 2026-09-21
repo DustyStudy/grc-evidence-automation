@@ -60,15 +60,38 @@ class HttpSink:
         session: Any = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        parts = urllib.parse.urlsplit(url)
+        if not isinstance(url, str):
+            raise SinkError("url must be a string")
+        for flag_name, flag in (("allow_insecure_http", allow_insecure_http), ("dry_run", dry_run)):
+            # A quoted "false" is a truthy string and would silently enable the option.
+            if not isinstance(flag, bool):
+                raise SinkError(f"{flag_name} must be true or false")
+        try:
+            parts = urllib.parse.urlsplit(url)
+        except ValueError as exc:
+            raise SinkError(f"invalid URL: {exc}") from exc
         if parts.scheme != "https" and not (allow_insecure_http and parts.scheme == "http"):
             raise SinkError(
                 "HttpSink requires an https URL (set allow_insecure_http only for local testing)"
             )
-        if parts.username or parts.password:
+        if "@" in parts.netloc:
             raise SinkError("credentials must not be embedded in the URL; use the auth block")
         if format not in {"bundle", "per_evidence"}:
             raise SinkError("format must be 'bundle' or 'per_evidence'")
+        if headers is not None and not (
+            isinstance(headers, dict)
+            and all(isinstance(k, str) and isinstance(v, str) for k, v in headers.items())
+        ):
+            raise SinkError("headers must be a mapping of strings")
+        if auth is not None and not isinstance(auth, dict):
+            raise SinkError("auth must be a mapping")
+        if payload_template is not None and not isinstance(payload_template, dict):
+            raise SinkError("payload_template must be a mapping")
+        for name, number in (("timeout", timeout), ("backoff", backoff)):
+            if isinstance(number, bool) or not isinstance(number, int | float) or number < 0:
+                raise SinkError(f"{name} must be a non-negative number")
+        if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:
+            raise SinkError("retries must be a non-negative integer")
         self.url = url
         self.name = f"http:{parts.scheme}://{parts.hostname}{parts.path}"
         self.format = format

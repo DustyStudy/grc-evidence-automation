@@ -40,13 +40,15 @@ jobs:
           cache: pip
 
       - name: Install package + dev dependencies
-        run: python -m pip install -e ".[dev]"
+        run: |
+          python -m pip install --require-hashes -r requirements/requirements-dev.txt
+          python -m pip install --no-deps -e .
 
       - name: Ruff lint
-        run: ruff check src tests scripts
+        run: ruff check src tests fuzz scripts
 
       - name: Ruff format check
-        run: ruff format --check src tests scripts
+        run: ruff format --check src tests fuzz scripts
 
       - name: Mypy
         run: mypy src
@@ -77,7 +79,9 @@ jobs:
           cache: pip
 
       - name: Install package + dev dependencies
-        run: python -m pip install -e ".[dev]"
+        run: |
+          python -m pip install --require-hashes -r requirements/requirements-dev.txt
+          python -m pip install --no-deps -e .
 
       - name: Pytest
         run: pytest -v
@@ -104,16 +108,90 @@ jobs:
 
       - name: Build sdist and wheel, check metadata
         run: |
-          python -m pip install build twine
+          python -m pip install --require-hashes -r requirements/requirements-release-tools.txt
           python -m build
           python -m twine check --strict dist/*
 
       - name: The installed wheel runs and ships its data files
         run: |
           python -m venv wheel-env
-          wheel-env/bin/python -m pip install dist/*.whl
+          wheel-env/bin/python -m pip install --require-hashes -r requirements/requirements-runtime.txt
+          wheel-env/bin/python -m pip install --no-deps dist/*.whl
           wheel-env/bin/grc-evidence coverage --check
           wheel-env/bin/grc-evidence collectors > /dev/null
+
+  fuzz:
+    # Coverage-guided fuzzing (Atheris/libFuzzer) of the integrity-critical code: tamper
+    # detection, evidence hashing, the config and secret loaders, the HTTP sink and the report
+    # renderer. The same targets also run as ordinary tests on a seed corpus and random
+    # inputs (tests/test_fuzz_targets.py), so the invariants are enforced without this job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [evidence, verify, report, config, secrets, http_sink]
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Atheris and the package
+        run: |
+          python -m pip install --require-hashes -r requirements/requirements-fuzz.txt
+          python -m pip install --no-deps -e .
+
+      - name: Fuzz ${{ matrix.target }} for 30 seconds
+        run: |
+          mkdir -p corpus crashes
+          cp fuzz/corpus/${{ matrix.target }}/* corpus/
+          python fuzz/run_fuzzer.py ${{ matrix.target }} corpus -max_total_time=30 -artifact_prefix=crashes/
+
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crashes-${{ matrix.target }}
+          path: crashes/
+          if-no-files-found: ignore
+
+  locks:
+    # The hash-pinned requirement files CI installs from must match pyproject.toml and the
+    # .in files. Regenerate with `python scripts/lock.py`.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install the pinned lock tooling
+        run: python -m pip install --require-hashes -r requirements/requirements-lock-tools.txt
+
+      - name: Requirement files are current
+        run: |
+          python scripts/lock.py
+          git diff --exit-code -- requirements
 
   crosswalk:
     # The control mapping is data reviewed by GRC staff; fail fast if it is inconsistent.
@@ -134,7 +212,9 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - run: python -m pip install -e .
+      - run: |
+          python -m pip install --require-hashes -r requirements/requirements-runtime.txt
+          python -m pip install --no-deps -e .
 
       - name: Validate control crosswalk
         run: grc-evidence coverage --check

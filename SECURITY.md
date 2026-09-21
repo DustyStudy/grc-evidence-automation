@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please use GitHub's **Security -> Report a vulnerability** on this repo rather than a public issue. If that is unavailable, open an issue with minimal detail asking for a private channel.
+Please [report a vulnerability privately](https://github.com/DustyStudy/grc-evidence-automation/security/advisories/new) (GitHub: **Security -> Report a vulnerability**) rather than opening a public issue. This is a solo-maintained project with no SLA, so reports are handled as time allows.
 
 Worth reporting: a way for a collector or sink to leak a secret or resource contents into evidence or logs, a path from configuration input to arbitrary code or request forgery, a way to make `verify` pass on modified evidence, or Terraform that grants broader access than documented.
 
@@ -21,5 +21,7 @@ Worth reporting: a way for a collector or sink to leak a secret or resource cont
 - Workflows run with `contents: read`; third-party actions are pinned to full commit SHAs (first-party HashiCorp/GitHub actions that publish major-version tags are noted inline).
 - `step-security/harden-runner` runs in audit mode.
 - CodeQL on every push/PR and weekly; dependency review on PRs (fails on high-severity findings and on GPL/AGPL licences); Dependabot weekly for Python, GitHub Actions and Terraform.
-- Releases are built by a tag-triggered workflow that attaches the wheel, sdist, Lambda deployment zip, a CycloneDX SBOM and a build provenance attestation to the GitHub Release. Verify an artifact with `gh attestation verify <file> --repo DustyStudy/grc-evidence-automation`.
+- Releases are built by a tag-triggered workflow that attaches the wheel, sdist, Lambda deployment zip, a CycloneDX SBOM and a build provenance attestation to the GitHub Release. Verify an artifact with `gh attestation verify <file> --repo DustyStudy/grc-evidence-automation`, or offline with the attestation bundle attached to the release: `gh attestation verify <file> --bundle <name>.sigstore.json --repo DustyStudy/grc-evidence-automation`.
+- The integrity-critical code (`verify` tamper detection, evidence hashing, the config and secret loaders, the HTTP sink and the report renderer) is fuzzed with Atheris in CI, and the same targets run as regression tests on every change.
+- CI installs its Python tooling from hash-pinned requirement files (`pip install --require-hashes`), and a CI job checks they match `pyproject.toml`.
 - An OpenSSF Scorecard workflow runs weekly and on pushes to `main`; results are published to the public Scorecard API (api.scorecard.dev).

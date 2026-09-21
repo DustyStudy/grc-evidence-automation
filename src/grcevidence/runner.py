@@ -57,26 +57,37 @@ class Config:
         allowed = {"accounts", "regions", "collectors", "parameters", "gcp", "sinks"}
         if unknown := set(raw) - allowed:
             raise ConfigError(f"unknown config key(s): {sorted(unknown)}")
-        collectors = raw.get("collectors") or {}
+        collectors = _mapping(raw.get("collectors"), "collectors")
         if unknown := set(collectors) - {"include", "exclude"}:
             raise ConfigError(f"unknown collectors key(s): {sorted(unknown)}")
         accounts = []
-        for a in raw.get("accounts") or []:
+        for a in _list(raw.get("accounts"), "accounts"):
+            a = _mapping(a, "each account")
             if unknown := set(a) - set(AccountConfig.__dataclass_fields__):
                 raise ConfigError(f"unknown account key(s): {sorted(unknown)}")
+            for key in ("id", "name", "role_arn", "external_id"):
+                if a.get(key) is not None and not isinstance(a[key], str):
+                    raise ConfigError(f"accounts[].{key} must be a string")
+            if a.get("regions") is not None:
+                _strings(a["regions"], "accounts[].regions")
             accounts.append(AccountConfig(**a))
         try:
             params = Parameters.from_dict(raw.get("parameters"))
         except ValueError as exc:
             raise ConfigError(str(exc)) from exc
+        sinks = _list(raw.get("sinks"), "sinks")
+        if not all(isinstance(s, dict) for s in sinks):
+            raise ConfigError("each sink must be a mapping")
         return cls(
             accounts=accounts,
-            regions=list(raw.get("regions") or ["us-east-1"]),
-            include=list(collectors.get("include") or []),
-            exclude=list(collectors.get("exclude") or []),
+            regions=_strings(raw.get("regions") or ["us-east-1"], "regions"),
+            include=_strings(collectors.get("include") or [], "collectors.include"),
+            exclude=_strings(collectors.get("exclude") or [], "collectors.exclude"),
             parameters=params,
-            gcp_projects=list((raw.get("gcp") or {}).get("projects") or []),
-            sinks=list(raw.get("sinks") or []),
+            gcp_projects=_strings(
+                _mapping(raw.get("gcp"), "gcp").get("projects") or [], "gcp.projects"
+            ),
+            sinks=sinks,
         )
 
     @classmethod
@@ -89,9 +100,33 @@ class Config:
         return cls.from_dict(json.loads(text))
 
 
+def _mapping(value: Any, what: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"{what} must be a mapping")
+    return value
+
+
+def _list(value: Any, what: str) -> list[Any]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ConfigError(f"{what} must be a list")
+    return value
+
+
+def _strings(value: Any, what: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ConfigError(f"{what} must be a list of strings")
+    return list(value)
+
+
 def build_sinks(specs: list[dict[str, Any]], session: Any = None) -> list[Sink]:
     sinks: list[Sink] = []
     for spec in specs:
+        if not isinstance(spec, dict):
+            raise ConfigError("each sink must be a mapping")
         spec = dict(spec)
         kind = spec.pop("type", None)
         try:
@@ -103,7 +138,7 @@ def build_sinks(specs: list[dict[str, Any]], session: Any = None) -> list[Sink]:
                 sinks.append(HttpSink(spec.pop("url"), session=session, **spec))
             else:
                 raise ConfigError(f"unknown sink type {kind!r}; use local, s3 or http")
-        except (KeyError, TypeError) as exc:
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ConfigError(f"invalid {kind} sink config: {exc}") from exc
         except SinkError as exc:
             raise ConfigError(str(exc)) from exc

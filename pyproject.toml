@@ -79,6 +79,8 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S"]
+# Fuzz targets signal a broken invariant with `assert`.
+"fuzz/*" = ["S101"]
 # Status.PASS = "pass" is an enum member, not a password.
 "src/grcevidence/models.py" = ["S105"]
 
