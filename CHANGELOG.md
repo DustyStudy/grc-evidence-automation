@@ -4,6 +4,9 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### Changed
+- Terraform: the S3 access-log bucket is now versioned (with matching noncurrent-version expiration), so a delete or overwrite of a log object by anyone with write access to that bucket is recoverable instead of silently erasing part of the audit trail of who read or changed evidence.
+
 ## [0.1.1] - 2026-09-21
 
 ### Added

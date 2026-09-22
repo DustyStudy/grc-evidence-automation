@@ -217,6 +217,17 @@ resource "aws_s3_bucket_public_access_block" "access_logs" {
   restrict_public_buckets = true
 }
 
+# Versioned so a delete or overwrite of an access-log record (by anyone with s3:PutObject/
+# DeleteObject on this bucket) is recoverable rather than silently destroying the audit trail
+# of who read or changed evidence objects.
+resource "aws_s3_bucket_versioning" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
   bucket = aws_s3_bucket.access_logs.id
 
@@ -240,10 +251,18 @@ resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
       days = var.evidence_expiration_days
     }
 
+    # Versioning is on for this bucket (above); without this, superseded/deleted log
+    # versions would be retained forever instead of aging out like the current version.
+    noncurrent_version_expiration {
+      noncurrent_days = var.evidence_expiration_days
+    }
+
     abort_incomplete_multipart_upload {
       days_after_initiation = 7
     }
   }
+
+  depends_on = [aws_s3_bucket_versioning.access_logs]
 }
 
 data "aws_iam_policy_document" "access_logs" {
