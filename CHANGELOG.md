@@ -6,6 +6,7 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ### Changed
 - Terraform: the S3 access-log bucket is now versioned (with matching noncurrent-version expiration), so a delete or overwrite of a log object by anyone with write access to that bucket is recoverable instead of silently erasing part of the audit trail of who read or changed evidence.
+- CI/CD: `step-security/harden-runner` now runs in `block` mode (was `audit`) with a per-job endpoint allowlist, built from the exact egress observed on real runs. A compromised dependency, action or build step can no longer reach an arbitrary host to exfiltrate data or pull a second-stage payload.
 
 ## [0.1.1] - 2026-09-21
 
