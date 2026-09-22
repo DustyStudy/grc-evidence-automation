@@ -19,7 +19,7 @@ Worth reporting: a way for a collector or sink to leak a secret or resource cont
 ## CI/CD hardening
 
 - Workflows run with `contents: read`; third-party actions are pinned to full commit SHAs (first-party HashiCorp/GitHub actions that publish major-version tags are noted inline).
-- `step-security/harden-runner` runs in audit mode.
+- `step-security/harden-runner` runs in block mode with a per-job explicit endpoint allowlist (derived from observed egress on real runs), so a compromised dependency or action cannot exfiltrate data or pull a second-stage payload from an arbitrary host. The release workflow's allowlist was built from equivalent, already-verified CI jobs rather than a live tag run, since it only triggers on a tag push; watch the first release after this change for a blocked-endpoint failure.
 - CodeQL on every push/PR and weekly; dependency review on PRs (fails on high-severity findings and on GPL/AGPL licences); Dependabot weekly for Python, GitHub Actions and Terraform.
 - Releases are built by a tag-triggered workflow that attaches the wheel, sdist, Lambda deployment zip, a CycloneDX SBOM and a build provenance attestation to the GitHub Release. Verify an artifact with `gh attestation verify <file> --repo DustyStudy/grc-evidence-automation`, or offline with the attestation bundle attached to the release: `gh attestation verify <file> --bundle <name>.sigstore.json --repo DustyStudy/grc-evidence-automation`.
 - The integrity-critical code (`verify` tamper detection, evidence hashing, the config and secret loaders, the HTTP sink and the report renderer) is fuzzed with Atheris in CI, and the same targets run as regression tests on every change.
