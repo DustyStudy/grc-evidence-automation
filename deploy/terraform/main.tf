@@ -342,8 +342,8 @@ resource "aws_lambda_function" "collector" {
   source_code_hash               = filebase64sha256(var.lambda_zip_path)
   timeout                        = 900
   memory_size                    = 512
-  reserved_concurrent_executions = 1                        # runs must not overlap: they would produce duplicate evidence
-  kms_key_arn                    = aws_kms_key.evidence.arn # encrypts GRC_CONFIG (accounts, role ARNs, sinks)
+  reserved_concurrent_executions = var.reserved_concurrent_executions # runs must not overlap: they would produce duplicate evidence
+  kms_key_arn                    = aws_kms_key.evidence.arn           # encrypts GRC_CONFIG (accounts, role ARNs, sinks)
   tags                           = var.tags
 
   environment {
