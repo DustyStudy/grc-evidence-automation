@@ -8,6 +8,9 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 - Terraform: the S3 access-log bucket is now versioned (with matching noncurrent-version expiration), so a delete or overwrite of a log object by anyone with write access to that bucket is recoverable instead of silently erasing part of the audit trail of who read or changed evidence.
 - CI/CD: `step-security/harden-runner` now runs in `block` mode (was `audit`) with a per-job endpoint allowlist, built from the exact egress observed on real runs. A compromised dependency, action or build step can no longer reach an arbitrary host to exfiltrate data or pull a second-stage payload.
 
+### Fixed
+- Terraform: the collector Lambda's `reserved_concurrent_executions` was hardcoded to `1`, so `terraform apply` failed outright in any account whose Lambda concurrent-execution quota is at or near the AWS-wide floor of 10 (new and sandbox accounts commonly start there) with `InvalidParameterValueException: ... decreases account's UnreservedConcurrentExecution below its minimum value of [10]`. There was no workaround short of editing the module. It's now `var.reserved_concurrent_executions` (default `1`, unchanged); set it to `-1` (the AWS provider's own "unreserved" sentinel) to deploy without a reservation. Found deploying the module for real into a fresh AWS account; see [`docs/live-deployment-verification.md`](docs/live-deployment-verification.md).
+
 ## [0.1.1] - 2026-09-21
 
 ### Added

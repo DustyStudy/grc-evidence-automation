@@ -15,6 +15,7 @@ See the root [README](../../README.md#deploy) for a module call. Key inputs:
 | `extra_sinks` | e.g. an HTTP ingestion sink (secrets by reference) |
 | `target_role_arns` | Member-account reader roles the function may assume |
 | `secret_arns` | Secrets Manager secrets the function may read (HTTP sink credentials) |
+| `reserved_concurrent_executions` | Defaults to 1 (runs must not overlap). Set to `-1` in an account whose Lambda concurrency quota is at the AWS floor of 10, where any reservation fails apply |
 | `object_lock_days`, `object_lock_mode` | Immutability. **Must be chosen at bucket creation.** `COMPLIANCE` mode cannot be shortened or removed by anyone, including you |
 | `evidence_expiration_days` | Retention. Align with your audit period and data-retention policy |
 | `alarm_actions` | SNS topics for the error alarm |

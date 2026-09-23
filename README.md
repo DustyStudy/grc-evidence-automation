@@ -124,7 +124,7 @@ module "reader_prod" {                               # applied in each member ac
 }
 ```
 
-Invoke once with `{"dry_run": true}` to check permissions before the first scheduled run. The IAM policy is exactly the read-only action list the collectors use; `grc-evidence permissions` prints it and a test fails if the Terraform drifts from it. See [deploy/terraform/README.md](deploy/terraform/README.md).
+Invoke once with `{"dry_run": true}` to check permissions before the first scheduled run. The IAM policy is exactly the read-only action list the collectors use; `grc-evidence permissions` prints it and a test fails if the Terraform drifts from it. See [deploy/terraform/README.md](deploy/terraform/README.md). For a real deployment into a live AWS account — proving the module, the Lambda and the S3/KMS delivery path all actually work, plus a real deployability bug it found and fixed — see [`docs/live-deployment-verification.md`](docs/live-deployment-verification.md).
 
 ## Delivering to a GRC platform
 

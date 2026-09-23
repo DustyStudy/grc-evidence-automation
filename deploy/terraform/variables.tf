@@ -15,6 +15,27 @@ variable "schedule_expression" {
   default     = "cron(0 6 * * ? *)"
 }
 
+variable "reserved_concurrent_executions" {
+  description = <<-EOT
+    Caps how many invocations of the collector can run at once; overlapping runs would
+    produce duplicate evidence, so this defaults to 1. Set to -1 (the AWS provider's
+    own "unreserved" sentinel; see its docs for aws_lambda_function) to leave the
+    function's concurrency unreserved instead. Needed in an account whose Lambda
+    concurrent-execution quota is at or near the AWS-wide floor of 10 -- new and
+    sandbox accounts commonly start there -- where *any* positive reservation fails
+    apply with "decreases account's UnreservedConcurrentExecution below its minimum
+    value of [10]". A sane schedule_expression period is, on its own, enough to avoid
+    overlap in that case. Do not set this to 0: that disables the function entirely.
+  EOT
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.reserved_concurrent_executions != 0
+    error_message = "0 disables the function entirely (it can never run). Use -1 for unreserved concurrency."
+  }
+}
+
 variable "collector_config" {
   description = <<-EOT
     Collector configuration (same schema as the YAML config file, minus `sinks`):
