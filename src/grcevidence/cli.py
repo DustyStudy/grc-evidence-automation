@@ -16,7 +16,7 @@ from grcevidence.catalog import (
 )
 from grcevidence.collectors.base import load_all
 from grcevidence.report import load_run, report_markdown, rollup, verify_run
-from grcevidence.runner import Config, ConfigError, build_sinks, deliver, run
+from grcevidence.runner import Config, ConfigError, aws_session, build_sinks, deliver, run
 
 
 def cmd_collectors(args: argparse.Namespace) -> int:
@@ -74,14 +74,15 @@ def cmd_collect(args: argparse.Namespace) -> int:
             config.regions = args.regions.split(",")
         if args.output:
             config.sinks = [{"type": "local", "path": args.output}]
-        sinks = [] if args.dry_run else build_sinks(config.sinks)
+        session = aws_session(config.use_fips_endpoint)
+        sinks = [] if args.dry_run else build_sinks(config.sinks, session=session)
         if not sinks and not args.dry_run:
             print(
                 "error: no sinks configured; pass --output DIR or add sinks to the config (or use --dry-run)",
                 file=sys.stderr,
             )
             return 2
-        result = deliver(run(config), sinks)
+        result = deliver(run(config, session=session), sinks)
     except (ConfigError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

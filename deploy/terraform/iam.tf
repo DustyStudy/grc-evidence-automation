@@ -3,10 +3,12 @@ locals {
   # list from the collector definitions; tests/test_terraform_consistency.py keeps them in sync.
   collector_read_actions = [
     "backup:ListBackupPlans",
+    "cloudformation:ListResources",
     "cloudtrail:DescribeTrails",
     "cloudtrail:GetTrailStatus",
     "config:DescribeConfigurationRecorderStatus",
     "config:DescribeConfigurationRecorders",
+    "ec2:DescribeRegions",
     "ec2:DescribeFlowLogs",
     "ec2:DescribeSecurityGroups",
     "ec2:DescribeVpcs",

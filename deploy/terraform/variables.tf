@@ -36,6 +36,12 @@ variable "reserved_concurrent_executions" {
   }
 }
 
+variable "use_fips_endpoint" {
+  description = "Make the collector Lambda call FIPS 140 validated AWS endpoints (sets use_fips_endpoint in its config). Overrides any value in collector_config."
+  type        = bool
+  default     = true
+}
+
 variable "collector_config" {
   description = <<-EOT
     Collector configuration (same schema as the YAML config file, minus `sinks`):
