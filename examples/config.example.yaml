@@ -16,7 +16,7 @@ regions: [us-east-1]
 collectors:
   exclude: []        # e.g. [aws.backups]
 
-use_fips_endpoint: true   # every AWS call uses FIPS 140 endpoints (US/Canada regions); see README
+use_fips_endpoint: true   # every AWS call uses FIPS 140 endpoints (US regions / GovCloud); see README
 
 parameters:          # thresholds: set these to what YOUR policy says
   max_access_key_age_days: 90

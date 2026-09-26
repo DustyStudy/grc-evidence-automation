@@ -10,7 +10,6 @@ import pytest
 from botocore.exceptions import ClientError
 
 from grcevidence.collectors.aws.storage import S3Security
-from grcevidence.models import Status
 from grcevidence.runner import AccountConfig, Config, ConfigError, _assume
 from grcevidence.runner import aws_session as real_aws_session  # bound before conftest patches
 
@@ -96,7 +95,7 @@ def _fake_ctx(region, clients, use_fips=True):
 
 
 def test_commercial_fips_lists_buckets_through_cloud_control_in_every_region(monkeypatch):
-    regions = ["eu-west-1", "us-east-1", "us-west-2"]
+    regions = ["eu-west-1", "us-east-1", "us-west-1", "us-west-2"]
     per_region = {"us-east-1": ["a", "b"], "us-west-2": ["b", "c"]}  # union, not per-region only
 
     def clients(svc, region):
@@ -105,19 +104,21 @@ def test_commercial_fips_lists_buckets_through_cloud_control_in_every_region(mon
                 describe_regions=lambda: {"Regions": [{"RegionName": r} for r in regions]}
             )
         assert svc == "cloudcontrol"
+        assert region.startswith("us-"), f"non-US region {region} must not be queried"
         return _cloudcontrol(region, per_region.get(region, []))
 
     def fake_getaddrinfo(host, port, *a, **k):
-        if "eu-west-1" in host:
+        if "us-west-1" in host:
             raise socket.gaierror("no such host")
         return [("ok",)]
 
     monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
-    names, method, skipped = S3Security._bucket_names(
+    names, method, skipped, out_of_scope = S3Security._bucket_names(
         _fake_ctx("us-east-1", clients), _NoListBuckets()
     )
     assert names == ["a", "b", "c"] and method == "cloudcontrol"
-    assert [r for r, _ in skipped] == ["eu-west-1"]
+    assert [r for r, _ in skipped] == ["us-west-1"]  # unreachable US region is reported
+    assert out_of_scope == ["eu-west-1"]  # non-US: recorded, not queried, not a finding
 
 
 def test_cloud_control_errors_are_reported_not_hidden(monkeypatch):
@@ -129,7 +130,9 @@ def test_cloud_control_errors_are_reported_not_hidden(monkeypatch):
         return _cloudcontrol(region, error="AccessDeniedException")
 
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [("ok",)])
-    names, _, skipped = S3Security._bucket_names(_fake_ctx("us-east-1", clients), _NoListBuckets())
+    names, _, skipped, _ = S3Security._bucket_names(
+        _fake_ctx("us-east-1", clients), _NoListBuckets()
+    )
     assert names == [] and skipped == [
         ("us-east-1", "Cloud Control API returned AccessDeniedException")
     ]
@@ -142,7 +145,7 @@ def test_govcloud_and_fips_off_use_list_buckets():
         _fake_ctx("us-gov-west-1", no_clients),  # s3-fips.us-gov-* resolves, so ListBuckets works
         _fake_ctx("us-east-1", no_clients, use_fips=False),
     ):
-        assert S3Security._bucket_names(ctx, s3) == (["x"], "list_buckets", [])
+        assert S3Security._bucket_names(ctx, s3) == (["x"], "list_buckets", [], [])
 
 
 def test_collector_end_to_end_with_cloud_control_listing(make_ctx, session, monkeypatch):
@@ -157,13 +160,16 @@ def test_collector_end_to_end_with_cloud_control_listing(make_ctx, session, monk
         if svc == "ec2":
             return SimpleNamespace(
                 describe_regions=lambda: {
-                    "Regions": [{"RegionName": "us-east-1"}, {"RegionName": "ap-south-2"}]
+                    "Regions": [
+                        {"RegionName": "us-east-1"},
+                        {"RegionName": "us-west-1"},
+                        {"RegionName": "eu-west-1"},
+                    ]
                 }
             )
         if svc == "cloudcontrol":
-            return _cloudcontrol(
-                region or "us-east-1", ["alpha", "beta"] if region == "us-east-1" else []
-            )
+            assert region.startswith("us-"), f"non-US region {region} must not be queried"
+            return _cloudcontrol(region, ["alpha", "beta"] if region == "us-east-1" else [])
         return real_client(svc, region)  # per-bucket S3 calls go to moto
 
     monkeypatch.setattr(ctx, "client", client)
@@ -171,12 +177,14 @@ def test_collector_end_to_end_with_cloud_control_listing(make_ctx, session, monk
         socket,
         "getaddrinfo",
         lambda host, *a, **k: (
-            (_ for _ in ()).throw(socket.gaierror()) if "ap-south-2" in host else [("ok",)]
+            (_ for _ in ()).throw(socket.gaierror()) if "us-west-1" in host else [("ok",)]
         ),
     )
     ev = S3Security().execute(ctx)
     assert ev.data["bucket_enumeration"] == "cloudcontrol"
     assert ev.data["buckets_examined"] == 2
-    assert ev.data["regions_not_enumerated"] == ["ap-south-2"]
-    assert ev.status == Status.FAIL  # the unreachable region is a finding, not silence
-    assert any("ap-south-2" in f.message for f in ev.findings)
+    assert ev.data["regions_not_enumerated"] == ["us-west-1"]
+    assert ev.data["regions_out_of_scope"] == ["eu-west-1"]
+    # An unreachable US region is a finding; a non-US region is recorded but never a finding.
+    assert any("us-west-1" in f.message for f in ev.findings)
+    assert not any("eu-west-1" in f.message for f in ev.findings)
