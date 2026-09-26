@@ -82,7 +82,7 @@ collectors:
   exclude: [aws.backups]
 parameters:                          # thresholds; set these to YOUR policy
   max_access_key_age_days: 90
-  password_min_length: 14
+  password_min_length: 15             # NIST SP 800-63B-4 single-factor minimum
   sensitive_ports: [22, 3389]
 gcp:
   projects: [my-project]             # needs the [gcp] extra and Application Default Credentials

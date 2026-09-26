@@ -113,14 +113,18 @@ class IamPasswordPolicy(Collector):
                     Severity.LOW,
                 )
             )
-        for flag in (
-            "RequireUppercaseCharacters",
-            "RequireLowercaseCharacters",
-            "RequireNumbers",
-            "RequireSymbols",
-        ):
-            if not policy.get(flag):
-                findings.append(Finding("account", f"{flag} is not enabled", Severity.LOW))
+        # NIST SP 800-63B-4 (which FedRAMP's IA-5 guidance points to) says verifiers SHALL NOT
+        # impose composition rules, so missing composition rules are only a finding when the
+        # organization's own policy requires them (parameters.password_require_composition).
+        if p.password_require_composition:
+            for flag in (
+                "RequireUppercaseCharacters",
+                "RequireLowercaseCharacters",
+                "RequireNumbers",
+                "RequireSymbols",
+            ):
+                if not policy.get(flag):
+                    findings.append(Finding("account", f"{flag} is not enabled", Severity.LOW))
         return Result(
             summary=f"Password policy: min length {length}, reuse prevention {reuse}",
             findings=findings,

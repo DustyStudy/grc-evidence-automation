@@ -76,7 +76,7 @@ def test_password_policy_missing_weak_and_strong(make_ctx, session):
     assert any("Minimum length 8" in m for m in messages(weak))
 
     iam.update_account_password_policy(
-        MinimumPasswordLength=14,
+        MinimumPasswordLength=15,
         PasswordReusePrevention=24,
         RequireUppercaseCharacters=True,
         RequireLowercaseCharacters=True,
@@ -85,7 +85,25 @@ def test_password_policy_missing_weak_and_strong(make_ctx, session):
         MaxPasswordAge=90,
     )
     strong = IamPasswordPolicy().execute(make_ctx())
-    assert strong.status == Status.PASS and strong.data["minimum_length"] == 14
+    assert strong.status == Status.PASS and strong.data["minimum_length"] == 15
+
+
+def test_password_policy_nist_800_63b4_passes_by_default(make_ctx, session):
+    # 15+ characters, no composition rules, no expiry: compliant with NIST SP 800-63B-4.
+    session.client("iam").update_account_password_policy(
+        MinimumPasswordLength=15, PasswordReusePrevention=24
+    )
+    ev = IamPasswordPolicy().execute(make_ctx())
+    assert ev.status == Status.PASS, messages(ev)
+
+
+def test_password_policy_composition_is_opt_in(make_ctx, session):
+    session.client("iam").update_account_password_policy(
+        MinimumPasswordLength=15, PasswordReusePrevention=24
+    )
+    ev = IamPasswordPolicy().execute(make_ctx(password_require_composition=True))
+    assert ev.status == Status.FAIL
+    assert any("RequireSymbols is not enabled" in m for m in messages(ev))
 
 
 def test_password_policy_thresholds_are_configurable(make_ctx, session):
