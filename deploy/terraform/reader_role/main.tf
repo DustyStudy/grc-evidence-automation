@@ -40,10 +40,12 @@ locals {
   # Keep in sync with ../iam.tf (enforced by tests/test_terraform_consistency.py).
   collector_read_actions = [
     "backup:ListBackupPlans",
+    "cloudformation:ListResources",
     "cloudtrail:DescribeTrails",
     "cloudtrail:GetTrailStatus",
     "config:DescribeConfigurationRecorderStatus",
     "config:DescribeConfigurationRecorders",
+    "ec2:DescribeRegions",
     "ec2:DescribeFlowLogs",
     "ec2:DescribeSecurityGroups",
     "ec2:DescribeVpcs",

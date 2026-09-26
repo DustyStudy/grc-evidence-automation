@@ -79,6 +79,7 @@ class Context:
     now: datetime = field(default_factory=lambda: datetime.now(UTC))
     gcp_project: str | None = None
     gcp_clients: Any = None  # object exposing .storage() and .firewalls(); injectable for tests
+    use_fips_endpoint: bool = False  # the session's clients call FIPS endpoints
 
     @property
     def partition(self) -> str:

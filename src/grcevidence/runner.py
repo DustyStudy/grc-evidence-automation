@@ -49,12 +49,21 @@ class Config:
     parameters: Parameters = field(default_factory=Parameters)
     gcp_projects: list[str] = field(default_factory=list)
     sinks: list[dict[str, Any]] = field(default_factory=list)
+    use_fips_endpoint: bool = True  # every AWS client calls FIPS 140 validated endpoints
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Config:
         if not isinstance(raw, dict):
             raise ConfigError("config must be a mapping")
-        allowed = {"accounts", "regions", "collectors", "parameters", "gcp", "sinks"}
+        allowed = {
+            "accounts",
+            "regions",
+            "collectors",
+            "parameters",
+            "gcp",
+            "sinks",
+            "use_fips_endpoint",
+        }
         if unknown := set(raw) - allowed:
             raise ConfigError(f"unknown config key(s): {sorted(unknown)}")
         collectors = _mapping(raw.get("collectors"), "collectors")
@@ -76,6 +85,9 @@ class Config:
         except ValueError as exc:
             raise ConfigError(str(exc)) from exc
         sinks = _list(raw.get("sinks"), "sinks")
+        use_fips = raw.get("use_fips_endpoint", True)
+        if not isinstance(use_fips, bool):
+            raise ConfigError("use_fips_endpoint must be true or false")
         if not all(isinstance(s, dict) for s in sinks):
             raise ConfigError("each sink must be a mapping")
         return cls(
@@ -88,6 +100,7 @@ class Config:
                 _mapping(raw.get("gcp"), "gcp").get("projects") or [], "gcp.projects"
             ),
             sinks=sinks,
+            use_fips_endpoint=use_fips,
         )
 
     @classmethod
@@ -146,8 +159,22 @@ def build_sinks(specs: list[dict[str, Any]], session: Any = None) -> list[Sink]:
 
 
 # ------------------------------------------------------------------------ execution
-def _assume(base: Any, acct: AccountConfig) -> Any:
+def aws_session(use_fips_endpoint: bool = True, **kwargs: Any) -> Any:
+    """A boto3 Session whose clients call FIPS 140 validated endpoints when requested.
+
+    Setting it on the session covers every client made from it: collectors, STS, the S3
+    sink and secret lookups.
+    """
     import boto3
+    import botocore.session
+
+    core = botocore.session.get_session()
+    if use_fips_endpoint:
+        core.set_config_variable("use_fips_endpoint", True)
+    return boto3.Session(botocore_session=core, **kwargs)
+
+
+def _assume(base: Any, acct: AccountConfig, use_fips_endpoint: bool = True) -> Any:
 
     kwargs: dict[str, Any] = {
         "RoleArn": acct.role_arn,
@@ -157,7 +184,8 @@ def _assume(base: Any, acct: AccountConfig) -> Any:
     if acct.external_id:
         kwargs["ExternalId"] = acct.external_id
     creds = base.client("sts").assume_role(**kwargs)["Credentials"]
-    return boto3.Session(
+    return aws_session(
+        use_fips_endpoint,
         aws_access_key_id=creds["AccessKeyId"],
         aws_secret_access_key=creds["SecretAccessKey"],
         aws_session_token=creds["SessionToken"],
@@ -188,10 +216,9 @@ def run(
     gcp_clients: Any = None,
 ) -> RunResult:
     """Run every selected collector across accounts/regions and return sealed evidence."""
-    import boto3
 
     started = now or datetime.now(UTC)
-    base = session or boto3.Session()
+    base = session or aws_session(config.use_fips_endpoint)
     chosen = collectors if collectors is not None else select(config.include, config.exclude)
     aws = [c for c in chosen if c.provider == "aws"]
     gcp = [c for c in chosen if c.provider == "gcp"]
@@ -203,7 +230,7 @@ def run(
         for acct in config.accounts or [AccountConfig()]:
             label = acct.id or acct.role_arn or "current"
             try:
-                sess = _assume(base, acct) if acct.role_arn else base
+                sess = _assume(base, acct, config.use_fips_endpoint) if acct.role_arn else base
                 account_id = sess.client("sts").get_caller_identity()["Account"]
                 if acct.id and acct.id != account_id:
                     raise ConfigError(
@@ -219,6 +246,7 @@ def run(
                 targets = regions[:1] if cls.scope == "global" else regions
                 for region in targets:
                     ctx = Context(account_id, region, sess, config.parameters, started)
+                    ctx.use_fips_endpoint = config.use_fips_endpoint
                     evidence.append(cls().execute(ctx))
 
     for project in config.gcp_projects:

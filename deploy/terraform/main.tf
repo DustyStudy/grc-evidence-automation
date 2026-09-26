@@ -16,7 +16,8 @@ locals {
   }
 
   grc_config = merge(var.collector_config, {
-    sinks = concat([local.s3_sink], var.extra_sinks)
+    use_fips_endpoint = var.use_fips_endpoint
+    sinks             = concat([local.s3_sink], var.extra_sinks)
   })
 }
 

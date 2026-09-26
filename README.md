@@ -78,6 +78,7 @@ accounts:
     external_id: 3f9c1c2e-replace-with-a-random-value
     regions: [us-east-1, us-west-2]
 regions: [us-east-1]                 # default for accounts without their own list
+use_fips_endpoint: true              # default; every AWS call uses FIPS 140 endpoints
 collectors:
   exclude: [aws.backups]
 parameters:                          # thresholds; set these to YOUR policy
@@ -96,6 +97,12 @@ sinks:
 ```
 
 Unknown keys are errors. Secrets are references (`env:`, `secretsmanager:`, `ssm:`), and bare literals are rejected so credentials cannot end up in the config file.
+
+### FIPS endpoints
+
+`use_fips_endpoint` (default `true`) makes every AWS client call FIPS 140 validated endpoints: collectors, STS role assumption, the S3 sink, and `secretsmanager:`/`ssm:` secret lookups. All the services involved have FIPS endpoints in the US commercial regions and GovCloud. FIPS endpoints exist only in some regions, so set `false` if you collect from regions outside the US or Canada.
+
+One call needed a workaround: in the commercial partition, S3's `ListBuckets` has no FIPS endpoint (the bare `s3-fips.<region>` hostname has no address records; only per-bucket hostnames exist). With FIPS on, `aws.s3_security` lists buckets through the Cloud Control API (`cloudcontrolapi-fips`) in every enabled region and merges the results. A region it can't reach over FIPS becomes a MEDIUM finding (`regions_not_enumerated`), not a silent gap. In GovCloud, `ListBuckets` has a FIPS endpoint and is used directly.
 
 ## Deploy
 
@@ -146,6 +153,7 @@ The HTTP sink is intentionally vendor-neutral. It POSTs this project's JSON sche
 - Resource inspection is capped per collector per region (`max_items_per_check`, default 500) and records say when they were truncated.
 - Single-region checks use the region list you configure; add every region you use, including ones you think are empty (GuardDuty and Config gaps live there).
 - No auto-remediation. This tool observes only.
+- The FIPS bucket listing (Cloud Control API) is unit-tested with stub clients: moto does not serve FIPS hostnames or the Cloud Control API.
 
 ## Development
 

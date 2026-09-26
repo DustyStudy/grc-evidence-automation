@@ -23,7 +23,7 @@ import logging
 import os
 from typing import Any
 
-from grcevidence.runner import Config, ConfigError, build_sinks, deliver, run
+from grcevidence.runner import Config, ConfigError, aws_session, build_sinks, deliver, run
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -41,13 +41,14 @@ def handler(event: dict[str, Any] | None, context: Any = None) -> dict[str, Any]
     config = Config.from_dict(raw)
     if event.get("collectors"):
         config.include = list(event["collectors"])
-    sinks = [] if event.get("dry_run") else build_sinks(config.sinks)
+    session = aws_session(config.use_fips_endpoint)
+    sinks = [] if event.get("dry_run") else build_sinks(config.sinks, session=session)
     if not sinks and not event.get("dry_run"):
         raise ConfigError(
             "no sinks configured; refusing to collect evidence that would be discarded"
         )
 
-    result = deliver(run(config), sinks)
+    result = deliver(run(config, session=session), sinks)
     summary = {
         "run_id": result.manifest.run_id,
         "accounts": result.manifest.accounts,
