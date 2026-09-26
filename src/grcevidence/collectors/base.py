@@ -27,8 +27,11 @@ class Parameters:
 
     max_access_key_age_days: int = 90
     max_access_key_unused_days: int = 45
-    password_min_length: int = 14
+    # NIST SP 800-63B-4: at least 15 characters for single-factor passwords, and verifiers
+    # SHALL NOT impose composition rules, so composition is only flagged when opted in.
+    password_min_length: int = 15
     password_reuse_prevention: int = 24
+    password_require_composition: bool = False
     sensitive_ports: tuple[int, ...] = (22, 3389)
     min_backup_retention_days: int = 7
     require_securityhub: bool = False
@@ -46,9 +49,9 @@ class Parameters:
         for key, value in raw.items():
             if key == "sensitive_ports":
                 continue
-            if key == "require_securityhub":
+            if key in ("require_securityhub", "password_require_composition"):
                 if not isinstance(value, bool):
-                    raise ValueError("parameters.require_securityhub must be true or false")
+                    raise ValueError(f"parameters.{key} must be true or false")
             elif isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"parameters.{key} must be a non-negative integer")
         if "sensitive_ports" in raw:

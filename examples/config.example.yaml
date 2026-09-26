@@ -19,8 +19,10 @@ collectors:
 parameters:          # thresholds: set these to what YOUR policy says
   max_access_key_age_days: 90
   max_access_key_unused_days: 45
-  password_min_length: 14
+  password_min_length: 15             # NIST SP 800-63B-4 minimum for single-factor passwords
   password_reuse_prevention: 24
+  password_require_composition: false # true flags missing upper/lower/number/symbol rules;
+                                      # NIST SP 800-63B-4 says verifiers SHALL NOT impose them
   sensitive_ports: [22, 3389]
   min_backup_retention_days: 7
   require_securityhub: false
