@@ -100,9 +100,9 @@ Unknown keys are errors. Secrets are references (`env:`, `secretsmanager:`, `ssm
 
 ### FIPS endpoints
 
-`use_fips_endpoint` (default `true`) makes every AWS client call FIPS 140 validated endpoints: collectors, STS role assumption, the S3 sink, and `secretsmanager:`/`ssm:` secret lookups. All the services involved have FIPS endpoints in the US commercial regions and GovCloud. FIPS endpoints exist only in some regions, so set `false` if you collect from regions outside the US or Canada.
+`use_fips_endpoint` (default `true`) makes every AWS client call FIPS 140 validated endpoints: collectors, STS role assumption, the S3 sink, and `secretsmanager:`/`ssm:` secret lookups. All the services involved have FIPS endpoints in the US commercial regions and GovCloud, which is where FedRAMP boundaries live. Configure only US regions in `regions`.
 
-One call needed a workaround: in the commercial partition, S3's `ListBuckets` has no FIPS endpoint (the bare `s3-fips.<region>` hostname has no address records; only per-bucket hostnames exist). With FIPS on, `aws.s3_security` lists buckets through the Cloud Control API (`cloudcontrolapi-fips`) in every enabled region and merges the results. A region it can't reach over FIPS becomes a MEDIUM finding (`regions_not_enumerated`), not a silent gap. In GovCloud, `ListBuckets` has a FIPS endpoint and is used directly.
+One call needed a workaround: in the commercial partition, S3's `ListBuckets` has no FIPS endpoint (the bare `s3-fips.<region>` hostname has no address records; only per-bucket hostnames exist). With FIPS on, `aws.s3_security` lists buckets through the Cloud Control API (`cloudcontrolapi-fips`) in every enabled US region and merges the results. A US region it can't reach over FIPS becomes a MEDIUM finding (`regions_not_enumerated`), not a silent gap. Enabled non-US regions are listed in `regions_out_of_scope`, and they're neither queried nor findings. Keep them locked down with a region-restricting SCP. In GovCloud, `ListBuckets` has a FIPS endpoint and is used directly.
 
 ## Deploy
 

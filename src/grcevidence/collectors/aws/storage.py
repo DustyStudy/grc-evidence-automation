@@ -35,7 +35,7 @@ class S3Security(Collector):
 
     def collect(self, ctx: Context) -> Result:
         s3 = ctx.client("s3")
-        buckets, method, not_enumerated = self._bucket_names(ctx, s3)
+        buckets, method, not_enumerated, out_of_scope = self._bucket_names(ctx, s3)
         limit = ctx.params.max_items_per_check
         truncated = len(buckets) > limit
         buckets = buckets[:limit]
@@ -64,24 +64,32 @@ class S3Security(Collector):
                 "buckets_without_versioning": unversioned,
                 "bucket_enumeration": method,
                 "regions_not_enumerated": [r for r, _ in not_enumerated],
+                "regions_out_of_scope": out_of_scope,
                 "truncated": truncated,
             },
             truncated_at=limit if truncated else None,
         )
 
     @staticmethod
-    def _bucket_names(ctx: Context, s3: Any) -> tuple[list[str], str, list[tuple[str, str]]]:
-        """Bucket names, how they were listed, and (region, reason) pairs that were skipped.
+    def _bucket_names(
+        ctx: Context, s3: Any
+    ) -> tuple[list[str], str, list[tuple[str, str]], list[str]]:
+        """Bucket names, how they were listed, US regions that couldn't be enumerated (with
+        the reason), and enabled non-US regions left out of scope.
 
         In the commercial partition S3 has no FIPS endpoint for ListBuckets: the bare
         s3-fips.<region> hostname has no address records, only bucket-scoped hosts do. With
         FIPS on there, buckets are listed through Cloud Control API (which has FIPS
-        endpoints) in every enabled region, and any region that can't be reached over FIPS
-        is reported instead of silently skipped.
+        endpoints) in every enabled US region; FedRAMP boundaries are US-only, so non-US
+        regions are recorded as out of scope rather than raised as findings. A US region
+        that can't be reached over FIPS is reported, not silently skipped.
         """
         if not (ctx.use_fips_endpoint and ctx.partition == "aws"):
-            return [b["Name"] for b in s3.list_buckets().get("Buckets", [])], "list_buckets", []
-        regions = sorted(r["RegionName"] for r in ctx.client("ec2").describe_regions()["Regions"])
+            listed = [b["Name"] for b in s3.list_buckets().get("Buckets", [])]
+            return listed, "list_buckets", [], []
+        enabled = sorted(r["RegionName"] for r in ctx.client("ec2").describe_regions()["Regions"])
+        regions = [r for r in enabled if r.startswith("us-")]
+        out_of_scope = [r for r in enabled if not r.startswith("us-")]
         names: set[str] = set()
         skipped: list[tuple[str, str]] = []
         for region in regions:
@@ -98,7 +106,7 @@ class S3Security(Collector):
             except ClientError as exc:
                 code = exc.response.get("Error", {}).get("Code", "ClientError")
                 skipped.append((region, f"Cloud Control API returned {code}"))
-        return sorted(names), "cloudcontrol", skipped
+        return sorted(names), "cloudcontrol", skipped, out_of_scope
 
     @staticmethod
     def _check_bucket(s3: Any, name: str) -> list[Finding]:
