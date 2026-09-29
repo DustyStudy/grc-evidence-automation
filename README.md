@@ -172,7 +172,12 @@ grc-evidence coverage --format markdown > docs/coverage.md
 grc-evidence collectors --format markdown > docs/collectors.md
 ```
 
-Tests fail if these are stale. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Tests fail if these are stale.
+
+CI also runs `security-scan.yml`: Gitleaks over the full history, Checkov
+against the Terraform (blocking), and Trivy for vulnerable dependencies
+and misconfigurations (reported to the Security tab). Accepted Checkov
+findings are skipped inline in `deploy/terraform/main.tf` with the reason. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Project health
 
