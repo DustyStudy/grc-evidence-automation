@@ -23,6 +23,9 @@ locals {
 
 # --------------------------------------------------------------------------- KMS
 data "aws_iam_policy_document" "kms" {
+  #checkov:skip=CKV_AWS_109:Key policy root statement delegates key administration to IAM; resource "*" means this key in a key policy
+  #checkov:skip=CKV_AWS_111:Key policy root statement delegates key administration to IAM; resource "*" means this key in a key policy
+  #checkov:skip=CKV_AWS_356:In a KMS key policy, resource "*" refers only to the key the policy is attached to
   statement {
     sid       = "AccountAdministration"
     actions   = ["kms:*"]
@@ -67,6 +70,8 @@ resource "aws_kms_alias" "evidence" {
 
 # ---------------------------------------------------------------------------- S3
 resource "aws_s3_bucket" "evidence" {
+  #checkov:skip=CKV2_AWS_62:Nothing consumes object events; delivery failures raise the Lambda error alarm instead
+  #checkov:skip=CKV_AWS_144:Cross-region replication is a deployment choice (cost, data residency); versioning and Object Lock protect the evidence in-region
   bucket              = local.bucket
   object_lock_enabled = var.object_lock_days > 0
   tags                = var.tags
@@ -198,6 +203,9 @@ resource "aws_s3_bucket_policy" "evidence" {
 # cannot deliver to a bucket whose default encryption is SSE-KMS (an AWS platform restriction),
 # so this terminal sink uses SSE-S3.
 resource "aws_s3_bucket" "access_logs" {
+  #checkov:skip=CKV_AWS_145:S3 server access logging cannot deliver to an SSE-KMS bucket; SSE-S3 is the only option for this sink
+  #checkov:skip=CKV2_AWS_62:Terminal log sink; nothing consumes object events
+  #checkov:skip=CKV_AWS_144:Cross-region replication is a deployment choice; the access logs follow the evidence bucket's residency
   bucket = "${local.bucket}-logs"
   tags   = var.tags
 }
@@ -335,6 +343,10 @@ resource "aws_cloudwatch_log_group" "function" {
 }
 
 resource "aws_lambda_function" "collector" {
+  #checkov:skip=CKV_AWS_117:Calls only AWS/GCP APIs over TLS; a VPC would add NAT cost with no data-path benefit
+  #checkov:skip=CKV_AWS_116:Invoked by an EventBridge schedule, and failures raise the errors alarm; the next scheduled run retries
+  #checkov:skip=CKV_AWS_272:Deployed from a locally built zip; code signing needs a Signer profile the caller would have to own
+  #checkov:skip=CKV_AWS_50:X-Ray adds cost and IAM scope for one scheduled function; CloudWatch Logs and the errors alarm cover diagnosis
   function_name                  = var.name
   role                           = aws_iam_role.function.arn
   runtime                        = "python3.12"
