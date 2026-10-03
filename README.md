@@ -10,6 +10,8 @@
 
 Read-only Python collectors gather configuration evidence from AWS (and optionally GCP), tag each record with the SOC 2 criteria, ISO 27001 Annex A controls, NIST 800-53 controls and FedRAMP 20x KSIs it is relevant to, seal it with a SHA-256, and deliver it on a schedule to an encrypted S3 evidence store and/or a GRC-platform ingestion API. Deploys as a Lambda with Terraform.
 
+**Verified live:** deployed into a member account of a real AWS Organization. A dry run returned 13 control results (5 pass, 7 fail, 1 not applicable), the real run delivered sealed evidence to S3, and `grc-evidence verify` confirmed every hash. The first `terraform apply` exposed a reserved-concurrency bug, now configurable. [Evidence](docs/live-deployment-verification.md).
+
 ```mermaid
 flowchart LR
   EB[EventBridge schedule] --> L[Lambda: grcevidence]
