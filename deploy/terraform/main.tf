@@ -342,6 +342,7 @@ resource "aws_cloudwatch_log_group" "function" {
   depends_on = [aws_kms_key.evidence]
 }
 
+#trivy:ignore:AWS-0066 X-Ray off by design; see the CKV_AWS_50 skip below.
 resource "aws_lambda_function" "collector" {
   #checkov:skip=CKV_AWS_117:Calls only AWS/GCP APIs over TLS; a VPC would add NAT cost with no data-path benefit
   #checkov:skip=CKV_AWS_116:Invoked by an EventBridge schedule, and failures raise the errors alarm; the next scheduled run retries
