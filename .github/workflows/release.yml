@@ -20,7 +20,7 @@ jobs:
         # `package`/`locks` jobs in ci.yml, which run the same pip install / build / SBOM steps.
         # This job itself only runs on a tag push, so it cannot be exercised by a PR; watch the
         # first release after this change and add any endpoint it reports as blocked.
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -87,7 +87,7 @@ jobs:
         # also performs keyless signing. `gh release create`/`gh attestation verify` need the
         # github.com/api/uploads endpoints below. Same caveat as the build job: not live-tested,
         # since this only runs on a tag push.
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
