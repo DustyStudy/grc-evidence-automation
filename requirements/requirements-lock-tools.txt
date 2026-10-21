@@ -18,4 +18,4 @@ uv==0.12.18 \
     --hash=sha256:d5037ec17654c756fc9841270f413c5fc9ecef89108b443f5dd34600a3ccdb19 \
     --hash=sha256:e7ab1387b222ab640dbd057b95548a199e4c621aa35e9f6a32c0516c76e7637d \
     --hash=sha256:fbe0489871e74ebfb70379a32526c62b9fb615acf13576b9f19bc09a142f62b0
-    # via -r requirements-lock-tools.in
+    # via -r requirements/requirements-lock-tools.in
