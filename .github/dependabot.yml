@@ -10,6 +10,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      pip:
+        patterns: ["*"]
     open-pull-requests-limit: 5
     ignore:
       - dependency-name: "*"
@@ -22,6 +25,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]
     open-pull-requests-limit: 5
 
   - package-ecosystem: "terraform"
@@ -34,4 +40,7 @@ updates:
       - "/deploy/terraform/reader_role"
     schedule:
       interval: "weekly"
+    groups:
+      terraform:
+        patterns: ["*"]
     open-pull-requests-limit: 5
