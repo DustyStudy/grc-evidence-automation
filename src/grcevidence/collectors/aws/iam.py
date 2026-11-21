@@ -1,4 +1,4 @@
-"""IAM evidence: MFA, password policy, access-key hygiene, privileged access."""
+"""IAM evidence: MFA, password policy and access-key hygiene."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from grcevidence.collectors.base import Collector, Context, Result, register
-from grcevidence.models import Finding, Severity, Status
+from grcevidence.models import Finding, Severity
 
 ROOT = "<root_account>"
 
@@ -190,44 +190,4 @@ class IamAccessKeys(Collector):
             summary=f"{active_keys} active access key(s) across {len(rows) - 1} IAM user(s); {len(findings)} finding(s)",
             findings=findings,
             data={"iam_users": len(rows) - 1, "active_access_keys": active_keys},
-        )
-
-
-ADMIN_POLICY = "AdministratorAccess"
-
-
-@register
-class IamPrivilegedAccess(Collector):
-    id = "aws.iam_privileged_access"
-    title = "Principals holding AdministratorAccess"
-    scope = "global"
-    permissions = ("iam:ListEntitiesForPolicy",)
-
-    def collect(self, ctx: Context) -> Result:
-        iam = ctx.client("iam")
-        arn = f"arn:{ctx.partition}:iam::aws:policy/{ADMIN_POLICY}"
-        users: list[str] = []
-        groups: list[str] = []
-        roles: list[str] = []
-        for page in iam.get_paginator("list_entities_for_policy").paginate(PolicyArn=arn):
-            users += [u["UserName"] for u in page.get("PolicyUsers", [])]
-            groups += [g["GroupName"] for g in page.get("PolicyGroups", [])]
-            roles += [r["RoleName"] for r in page.get("PolicyRoles", [])]
-        findings = [
-            Finding(
-                u,
-                f"IAM user has {ADMIN_POLICY} attached directly (prefer role/group with MFA)",
-                Severity.MEDIUM,
-            )
-            for u in users
-        ]
-        return Result(
-            summary=f"{ADMIN_POLICY}: {len(users)} user(s), {len(groups)} group(s), {len(roles)} role(s)",
-            findings=findings,
-            data={
-                "admin_users": sorted(users),
-                "admin_groups": sorted(groups),
-                "admin_roles": sorted(roles),
-            },
-            status=Status.FAIL if findings else Status.PASS,
         )
