@@ -7,7 +7,7 @@ cloud API can supply.
 
 ## SOC 2 (Trust Services Criteria)
 
-12 of 15 technical controls have automated evidence; 23 organizational controls are outside what collectors can evidence.
+13 of 15 technical controls have automated evidence; 23 organizational controls are outside what collectors can evidence.
 
 | Control | Title | Type | Automated evidence from |
 |---|---|---|---|
@@ -28,20 +28,20 @@ cloud API can supply.
 | CC5.1 | Selects and develops control activities | organizational | - |
 | CC5.2 | General controls over technology | technical (gap) | - |
 | CC5.3 | Deploys controls through policies and procedures | organizational | - |
-| CC6.1 | Logical access security software, infrastructure and architectures | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys`, `aws.iam_privileged_access`, `aws.identity_center`, `aws.s3_security`, `aws.kms_rotation`, `aws.encryption_at_rest`, `gcp.storage_buckets` |
+| CC6.1 | Logical access security software, infrastructure and architectures | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys`, `aws.iam_privileged_access`, `aws.identity_center`, `aws.s3_security`, `aws.kms_rotation`, `aws.acm_certificates`, `aws.secrets_rotation`, `aws.encryption_at_rest`, `aws.eks_security`, `gcp.storage_buckets` |
 | CC6.2 | User registration, authorization and credential issuance | technical | `aws.iam_access_keys`, `aws.identity_center` |
 | CC6.3 | Role-based access, least privilege and access removal | technical | `aws.iam_privileged_access`, `aws.identity_center` |
 | CC6.4 | Physical access restrictions | organizational | - |
 | CC6.5 | Disposal of logical and physical assets | organizational | - |
-| CC6.6 | Protection against threats from outside system boundaries | technical | `aws.iam_mfa`, `aws.network_exposure`, `gcp.firewall_exposure` |
-| CC6.7 | Restricts transmission, movement and removal of information | technical | `aws.s3_security`, `gcp.storage_buckets` |
-| CC6.8 | Prevents and detects unauthorized or malicious software | technical (gap) | - |
-| CC7.1 | Detects new vulnerabilities and configuration changes | technical | `aws.config_recorder` |
-| CC7.2 | Monitors system components for anomalies | technical | `aws.cloudtrail`, `aws.threat_detection`, `aws.vpc_flow_logs` |
+| CC6.6 | Protection against threats from outside system boundaries | technical | `aws.iam_mfa`, `aws.network_exposure`, `aws.waf_coverage`, `aws.waf_cloudfront`, `aws.eks_security`, `gcp.firewall_exposure` |
+| CC6.7 | Restricts transmission, movement and removal of information | technical | `aws.s3_security`, `aws.acm_certificates`, `gcp.storage_buckets` |
+| CC6.8 | Prevents and detects unauthorized or malicious software | technical | `aws.vulnerability_scanning` |
+| CC7.1 | Detects new vulnerabilities and configuration changes | technical | `aws.securityhub_controls`, `aws.vulnerability_scanning`, `aws.config_recorder`, `aws.config_rules` |
+| CC7.2 | Monitors system components for anomalies | technical | `aws.cloudtrail`, `aws.threat_detection`, `aws.vpc_flow_logs`, `aws.eks_security` |
 | CC7.3 | Evaluates security events | technical | `aws.cloudtrail`, `aws.threat_detection` |
 | CC7.4 | Responds to security incidents | organizational | - |
 | CC7.5 | Recovers from security incidents | organizational | - |
-| CC8.1 | Authorizes, tests, approves and implements changes | technical | `aws.config_recorder` |
+| CC8.1 | Authorizes, tests, approves and implements changes | technical | `aws.config_recorder`, `aws.config_rules` |
 | CC9.1 | Risk mitigation for business disruptions | organizational | - |
 | CC9.2 | Vendor and business-partner risk management | organizational | - |
 | A1.1 | Capacity management | technical (gap) | - |
@@ -52,13 +52,13 @@ cloud API can supply.
 
 ## ISO/IEC 27001:2022 Annex A
 
-15 of 27 technical controls have automated evidence; 1 organizational controls are outside what collectors can evidence.
+17 of 27 technical controls have automated evidence; 1 organizational controls are outside what collectors can evidence.
 
 | Control | Title | Type | Automated evidence from |
 |---|---|---|---|
 | A.5.15 | Access control | technical | `aws.s3_security`, `gcp.storage_buckets` |
 | A.5.16 | Identity management | technical | `aws.iam_access_keys` |
-| A.5.17 | Authentication information | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys` |
+| A.5.17 | Authentication information | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys`, `aws.secrets_rotation` |
 | A.5.18 | Access rights | technical | `aws.iam_privileged_access`, `aws.identity_center` |
 | A.5.23 | Information security for use of cloud services | organizational | - |
 | A.5.30 | ICT readiness for business continuity | technical | `aws.backups` |
@@ -68,50 +68,55 @@ cloud API can supply.
 | A.8.4 | Access to source code | technical (gap) | - |
 | A.8.5 | Secure authentication | technical | `aws.iam_mfa`, `aws.iam_password_policy` |
 | A.8.6 | Capacity management | technical (gap) | - |
-| A.8.7 | Protection against malware | technical (gap) | - |
-| A.8.8 | Management of technical vulnerabilities | technical (gap) | - |
-| A.8.9 | Configuration management | technical | `aws.config_recorder` |
+| A.8.7 | Protection against malware | technical | `aws.vulnerability_scanning` |
+| A.8.8 | Management of technical vulnerabilities | technical | `aws.securityhub_controls`, `aws.vulnerability_scanning` |
+| A.8.9 | Configuration management | technical | `aws.securityhub_controls`, `aws.config_recorder`, `aws.config_rules` |
 | A.8.10 | Information deletion | technical (gap) | - |
 | A.8.11 | Data masking | technical (gap) | - |
 | A.8.12 | Data leakage prevention | technical (gap) | - |
 | A.8.13 | Information backup | technical | `aws.backups` |
 | A.8.14 | Redundancy of information processing facilities | technical (gap) | - |
-| A.8.15 | Logging | technical | `aws.cloudtrail`, `aws.vpc_flow_logs` |
+| A.8.15 | Logging | technical | `aws.cloudtrail`, `aws.vpc_flow_logs`, `aws.eks_security` |
 | A.8.16 | Monitoring activities | technical | `aws.threat_detection`, `aws.vpc_flow_logs` |
 | A.8.17 | Clock synchronization | technical (gap) | - |
-| A.8.20 | Networks security | technical | `aws.network_exposure`, `gcp.firewall_exposure` |
+| A.8.20 | Networks security | technical | `aws.network_exposure`, `aws.waf_coverage`, `aws.waf_cloudfront`, `aws.eks_security`, `gcp.firewall_exposure` |
 | A.8.21 | Security of network services | technical (gap) | - |
 | A.8.22 | Segregation of networks | technical | `aws.network_exposure`, `gcp.firewall_exposure` |
-| A.8.24 | Use of cryptography | technical | `aws.s3_security`, `aws.kms_rotation`, `aws.encryption_at_rest` |
+| A.8.24 | Use of cryptography | technical | `aws.s3_security`, `aws.kms_rotation`, `aws.acm_certificates`, `aws.encryption_at_rest`, `aws.eks_security` |
 | A.8.32 | Change management | technical (gap) | - |
 
 ## NIST SP 800-53 Rev. 5
 
-16 of 17 technical controls have automated evidence; 0 organizational controls are outside what collectors can evidence.
+22 of 22 technical controls have automated evidence; 0 organizational controls are outside what collectors can evidence.
 
 | Control | Title | Type | Automated evidence from |
 |---|---|---|---|
 | AC-2 | Account management | technical | `aws.iam_access_keys`, `aws.iam_privileged_access`, `aws.identity_center` |
 | AC-3 | Access enforcement | technical | `aws.s3_security`, `gcp.storage_buckets` |
 | AC-6 | Least privilege | technical | `aws.iam_privileged_access`, `aws.identity_center` |
-| AU-2 | Event logging | technical | `aws.cloudtrail` |
+| AU-2 | Event logging | technical | `aws.cloudtrail`, `aws.eks_security` |
 | AU-9 | Protection of audit information | technical | `aws.cloudtrail` |
-| AU-12 | Audit record generation | technical | `aws.cloudtrail`, `aws.vpc_flow_logs` |
-| CM-2 | Baseline configuration | technical | `aws.config_recorder` |
-| CM-6 | Configuration settings | technical | `aws.config_recorder` |
+| AU-12 | Audit record generation | technical | `aws.cloudtrail`, `aws.vpc_flow_logs`, `aws.eks_security` |
+| CA-7 | Continuous monitoring | technical | `aws.securityhub_controls`, `aws.config_rules` |
+| CM-2 | Baseline configuration | technical | `aws.config_recorder`, `aws.config_rules` |
+| CM-6 | Configuration settings | technical | `aws.securityhub_controls`, `aws.config_recorder`, `aws.config_rules` |
 | CP-9 | System backup | technical | `aws.backups` |
 | IA-2 | Identification and authentication (organizational users) | technical | `aws.iam_mfa` |
-| IA-5 | Authenticator management | technical | `aws.iam_password_policy`, `aws.iam_access_keys` |
-| RA-5 | Vulnerability monitoring and scanning | technical (gap) | - |
-| SC-7 | Boundary protection | technical | `aws.network_exposure`, `aws.vpc_flow_logs`, `gcp.firewall_exposure` |
-| SC-12 | Cryptographic key establishment and management | technical | `aws.kms_rotation` |
+| IA-5 | Authenticator management | technical | `aws.iam_password_policy`, `aws.iam_access_keys`, `aws.secrets_rotation` |
+| RA-5 | Vulnerability monitoring and scanning | technical | `aws.securityhub_controls`, `aws.vulnerability_scanning` |
+| SC-5 | Denial-of-service protection | technical | `aws.waf_coverage`, `aws.waf_cloudfront` |
+| SC-7 | Boundary protection | technical | `aws.network_exposure`, `aws.waf_coverage`, `aws.waf_cloudfront`, `aws.vpc_flow_logs`, `aws.eks_security`, `gcp.firewall_exposure` |
+| SC-8 | Transmission confidentiality and integrity | technical | `aws.acm_certificates` |
+| SC-12 | Cryptographic key establishment and management | technical | `aws.kms_rotation`, `aws.acm_certificates`, `aws.secrets_rotation` |
 | SC-13 | Cryptographic protection | technical | `aws.kms_rotation` |
-| SC-28 | Protection of information at rest | technical | `aws.s3_security`, `aws.encryption_at_rest`, `gcp.storage_buckets` |
+| SC-17 | Public key infrastructure certificates | technical | `aws.acm_certificates` |
+| SC-28 | Protection of information at rest | technical | `aws.s3_security`, `aws.encryption_at_rest`, `aws.eks_security`, `gcp.storage_buckets` |
+| SI-2 | Flaw remediation | technical | `aws.vulnerability_scanning` |
 | SI-4 | System monitoring | technical | `aws.threat_detection` |
 
 ## FedRAMP 20x Key Security Indicators (Consolidated Rules 2026.09.13.02)
 
-18 of 31 technical controls have automated evidence; 15 organizational controls are outside what collectors can evidence.
+21 of 31 technical controls have automated evidence; 15 organizational controls are outside what collectors can evidence.
 
 KSIs are outcome statements, not controls. Which ones a provider must meet depends on its FedRAMP Certification Class, and FedRAMP's own validation process decides whether they are met. This table shows only where this tool's evidence is relevant.
 
@@ -121,27 +126,27 @@ KSIs are outcome statements, not controls. Which ones a provider must meet depen
 | KSI-CMT-LMC | Logging Changes | technical | `aws.cloudtrail`, `aws.config_recorder` |
 | KSI-CMT-RMV | Redeploying vs Modifying | technical (gap) | - |
 | KSI-CMT-RVP | Reviewing Change Procedures | organizational | - |
-| KSI-CMT-VTD | Validating Throughout Deployment | technical (gap) | - |
+| KSI-CMT-VTD | Validating Throughout Deployment | technical | `aws.vulnerability_scanning` |
 | KSI-CNA-DFP | Defining Functionality and Privileges | technical (gap) | - |
 | KSI-CNA-EIS | Enforcing Intended State | technical (gap) | - |
 | KSI-CNA-IBP | Implementing Best Practices | technical (gap) | - |
-| KSI-CNA-MAT | Minimizing Attack Surface | technical | `aws.network_exposure`, `gcp.firewall_exposure` |
+| KSI-CNA-MAT | Minimizing Attack Surface | technical | `aws.network_exposure`, `aws.waf_coverage`, `aws.waf_cloudfront`, `aws.eks_security`, `gcp.firewall_exposure` |
 | KSI-CNA-OFA | Optimizing for Availability | technical (gap) | - |
-| KSI-CNA-RNT | Restricting Network Traffic | technical | `aws.network_exposure`, `aws.vpc_flow_logs`, `gcp.firewall_exposure` |
-| KSI-CNA-RVP | Reviewing Protections | technical (gap) | - |
+| KSI-CNA-RNT | Restricting Network Traffic | technical | `aws.network_exposure`, `aws.waf_coverage`, `aws.waf_cloudfront`, `aws.vpc_flow_logs`, `aws.eks_security`, `gcp.firewall_exposure` |
+| KSI-CNA-RVP | Reviewing Protections | technical | `aws.waf_coverage`, `aws.waf_cloudfront` |
 | KSI-CNA-ULN | Using Logical Networking | technical | `aws.network_exposure`, `aws.vpc_flow_logs`, `gcp.firewall_exposure` |
 | KSI-IAM-AAM | Automating Account Management | technical | `aws.iam_access_keys`, `aws.iam_privileged_access`, `aws.identity_center` |
 | KSI-IAM-APM | Adopting Passwordless Methods | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys` |
 | KSI-IAM-ELP | Ensuring Least Privilege | technical | `aws.iam_privileged_access`, `aws.identity_center`, `aws.s3_security`, `gcp.storage_buckets` |
 | KSI-IAM-JIT | Authorizing Just-in-Time | technical | `aws.iam_privileged_access`, `aws.identity_center` |
-| KSI-IAM-SNU | Securing Non-User Authentication | technical | `aws.iam_access_keys` |
+| KSI-IAM-SNU | Securing Non-User Authentication | technical | `aws.iam_access_keys`, `aws.secrets_rotation` |
 | KSI-IAM-SUS | Responding to Suspicious Activity | technical (gap) | - |
 | KSI-INR-AAR | Generating After Action Reports | organizational | - |
 | KSI-INR-RIR | Reviewing Incident Response Procedures | organizational | - |
 | KSI-INR-RPI | Reviewing Past Incidents | organizational | - |
 | KSI-MLA-ALA | Authorizing Log Access | technical (gap) | - |
-| KSI-MLA-EVC | Evaluating Configurations | technical | `aws.config_recorder` |
-| KSI-MLA-LET | Logging Event Types | technical | `aws.cloudtrail`, `aws.vpc_flow_logs` |
+| KSI-MLA-EVC | Evaluating Configurations | technical | `aws.securityhub_controls`, `aws.config_recorder`, `aws.config_rules` |
+| KSI-MLA-LET | Logging Event Types | technical | `aws.cloudtrail`, `aws.vpc_flow_logs`, `aws.eks_security` |
 | KSI-MLA-OSM | Operating SIEM Capability | technical | `aws.cloudtrail` |
 | KSI-MLA-RVL | Reviewing Logs | technical | `aws.threat_detection` |
 | KSI-PIY-GIV | Generating Inventories | technical | `aws.config_recorder` |
@@ -154,13 +159,13 @@ KSIs are outcome statements, not controls. Which ones a provider must meet depen
 | KSI-RPL-RRO | Reviewing Recovery Objectives | organizational | - |
 | KSI-RPL-TRC | Testing Recovery Capabilities | technical (gap) | - |
 | KSI-SCR-MIT | Mitigating Supply Chain Risk | organizational | - |
-| KSI-SCR-MON | Monitoring Supply Chain Risk | technical (gap) | - |
-| KSI-SVC-ACM | Automating Configuration Management | technical | `aws.config_recorder` |
-| KSI-SVC-ASM | Automating Secret Management | technical | `aws.kms_rotation` |
+| KSI-SCR-MON | Monitoring Supply Chain Risk | technical | `aws.vulnerability_scanning` |
+| KSI-SVC-ACM | Automating Configuration Management | technical | `aws.securityhub_controls`, `aws.config_recorder`, `aws.config_rules` |
+| KSI-SVC-ASM | Automating Secret Management | technical | `aws.kms_rotation`, `aws.acm_certificates`, `aws.secrets_rotation` |
 | KSI-SVC-EIS | Evaluating and Improving Security | organizational | - |
 | KSI-SVC-PRR | Preventing Residual Risk | organizational | - |
 | KSI-SVC-RUD | Removing Unwanted Data | organizational | - |
-| KSI-SVC-SIN | Securing Information | technical | `aws.s3_security`, `aws.kms_rotation`, `aws.encryption_at_rest`, `gcp.storage_buckets` |
+| KSI-SVC-SIN | Securing Information | technical | `aws.s3_security`, `aws.kms_rotation`, `aws.acm_certificates`, `aws.encryption_at_rest`, `aws.eks_security`, `gcp.storage_buckets` |
 | KSI-SVC-VCM | Validating Communications | technical (gap) | - |
 | KSI-SVC-VRI | Validating Resource Integrity | technical (gap) | - |
 

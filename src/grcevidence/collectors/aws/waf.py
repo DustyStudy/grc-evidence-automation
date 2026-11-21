@@ -77,6 +77,10 @@ class WafCoverage(Collector):
     title = "AWS WAF on internet-facing load balancers and REST API stages"
     permissions = (
         "elasticloadbalancing:DescribeLoadBalancers",
+        # GetWebACLForResource is also authorized against GetWebACL and, for ALBs under
+        # the newer permission model, GetLoadBalancerWebACL (WAF Developer Guide).
+        "elasticloadbalancing:GetLoadBalancerWebACL",
+        "wafv2:GetWebACL",
         "wafv2:GetWebACLForResource",
         "apigateway:GET",
     )
