@@ -35,6 +35,8 @@ class Parameters:
     sensitive_ports: tuple[int, ...] = (22, 3389)
     min_backup_retention_days: int = 7
     require_securityhub: bool = False
+    min_certificate_days_remaining: int = 30
+    max_secret_rotation_days: int = 90
     max_items_per_check: int = 500  # cap on resources examined per collector per region
 
     @classmethod
