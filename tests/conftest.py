@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 from datetime import UTC, datetime
 
 import boto3
@@ -13,6 +14,29 @@ _real_aws_session = runner.aws_session
 
 ACCOUNT = "123456789012"
 NOW = datetime(2026, 9, 20, 6, 0, 0, tzinfo=UTC)
+
+
+_LOCAL = {"localhost", "127.0.0.1", "::1"}
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Fail loudly if a test leaves the machine. moto intercepts inside botocore, so a real
+    socket or DNS lookup means a client escaped the mocks (CI would make the same call)."""
+    real_getaddrinfo, real_connect = socket.getaddrinfo, socket.socket.connect
+
+    def getaddrinfo(host, *args, **kwargs):
+        if host not in _LOCAL:
+            raise RuntimeError(f"test tried a real DNS lookup of {host!r}; stub it")
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def connect(self, address):
+        if isinstance(address, tuple) and address[0] not in _LOCAL:
+            raise RuntimeError(f"test tried a real connection to {address!r}; stub it")
+        return real_connect(self, address)
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", connect)
 
 
 @pytest.fixture(autouse=True)

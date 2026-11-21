@@ -21,6 +21,11 @@ aws.iam_privileged_access:
   iso27001: [A.5.18, A.8.2]
   nist_800_53: [AC-2, AC-6]
   fedramp_20x: [KSI-IAM-AAM, KSI-IAM-ELP, KSI-IAM-JIT]
+aws.identity_center:
+  soc2: [CC6.1, CC6.2, CC6.3]
+  iso27001: [A.5.18, A.8.2]
+  nist_800_53: [AC-2, AC-6]
+  fedramp_20x: [KSI-IAM-AAM, KSI-IAM-ELP, KSI-IAM-JIT]
 aws.s3_security:
   soc2: [CC6.1, CC6.7, C1.1]
   iso27001: [A.5.15, A.8.3, A.8.24]

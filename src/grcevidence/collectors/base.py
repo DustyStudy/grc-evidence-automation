@@ -105,6 +105,17 @@ class Result:
     truncated_at: int | None = None  # set to the cap when it cut the scan short
 
 
+def resource(rid: str, rtype: str, compliant: bool, **attributes: Any) -> dict[str, Any]:
+    """One examined resource for ``Result.data["resources"]``, the population an auditor
+    samples from and tests completeness against.
+
+    ``rtype`` is the CloudFormation type (``AWS::IAM::User``) or, for GCP, the Cloud Asset
+    Inventory type (``storage.googleapis.com/Bucket``). ``attributes`` hold only the
+    settings that were judged, never secrets or resource contents.
+    """
+    return {"id": rid, "type": rtype, "compliant": compliant, "attributes": attributes}
+
+
 class Collector:
     id: ClassVar[str]
     provider: ClassVar[str] = "aws"
@@ -159,19 +170,26 @@ class Collector:
             )
         status = result.status or (Status.FAIL if result.findings else Status.PASS)
         findings, summary, data = result.findings, result.summary, result.data
-        if result.truncated_at is not None:
+        truncated_at = result.truncated_at
+        cap = ctx.params.max_items_per_check
+        if len(data.get("resources", [])) > cap:
+            # The recorded population may never exceed the cap; a longer one is cut and the
+            # record marked incomplete like any other capped scan.
+            data = {**data, "resources": data["resources"][:cap]}
+            truncated_at = cap
+        if truncated_at is not None:
             # Only part of the estate was examined, so "no findings" proves nothing about the
             # rest. Record that in the evidence and never let it read as a clean pass.
             findings = [
                 *findings,
                 Finding(
                     self.id,
-                    f"Incomplete: only the first {result.truncated_at} resource(s) were examined; "
+                    f"Incomplete: only the first {truncated_at} resource(s) were examined; "
                     "raise parameters.max_items_per_check to cover the rest",
                     Severity.MEDIUM,
                 ),
             ]
-            summary = f"INCOMPLETE (cap of {result.truncated_at} reached): {summary}"
+            summary = f"INCOMPLETE (cap of {truncated_at} reached): {summary}"
             data = {**data, "truncated": True}
             if status in {Status.PASS, Status.NOT_APPLICABLE}:
                 status = Status.ERROR

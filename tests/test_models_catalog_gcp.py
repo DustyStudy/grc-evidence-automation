@@ -253,6 +253,16 @@ def test_gcs_buckets_findings():
     flagged = sorted({f.resource for f in ev.findings})
     assert flagged == ["legacy", "noub"] and ev.data["buckets_examined"] == 3
     assert ev.controls["soc2"] == ["CC6.1", "CC6.7", "C1.1"]
+    assert {r["id"]: r["compliant"] for r in ev.data["resources"]} == {
+        "good": True,
+        "legacy": False,
+        "noub": False,
+    }
+    assert {r["type"] for r in ev.data["resources"]} == {"storage.googleapis.com/Bucket"}
+    assert ev.data["resources"][1]["attributes"] == {
+        "uniform_bucket_level_access": False,
+        "public_access_prevention_enforced": False,
+    }
 
 
 def test_gcs_all_good_passes():
@@ -287,6 +297,31 @@ def test_gcp_firewall_findings():
         "tcp-any-port",
     ]
     assert ev.status == Status.FAIL
+    pop = {r["id"]: r["compliant"] for r in ev.data["resources"]}
+    assert [n for n, ok in pop.items() if not ok] == [
+        "ssh-open",
+        "range-open",
+        "all-open",
+        "tcp-any-port",
+    ]
+    assert len(pop) == len(rules)
+    assert {r["type"] for r in ev.data["resources"]} == {"compute.googleapis.com/Firewall"}
+    by_id = {r["id"]: r["attributes"] for r in ev.data["resources"]}
+    assert by_id["all-open"] == {
+        "open_to_internet": True,
+        "all_protocols": True,
+        "sensitive_tcp_open": False,
+    }
+    assert by_id["disabled"]["open_to_internet"] is False
+
+
+def test_gcp_firewall_listing_is_capped():
+    rules = [_rule(f"r{i}", ["10.0.0.0/8"], []) for i in range(3)]
+    ctx = _ctx(FakeClients(rules=rules))
+    ctx.params = Parameters(max_items_per_check=2)
+    ev = GcpFirewallExposure().execute(ctx)
+    assert ev.data["firewall_rules"] == 2 and ev.data["truncated"] is True
+    assert ev.status == Status.ERROR
 
 
 def test_gcp_without_library_or_credentials_is_error_not_pass():

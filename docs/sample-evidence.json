@@ -3,6 +3,11 @@
   "collected_at": "2026-09-20T06:00:00+00:00",
   "collector": "aws.network_exposure",
   "controls": {
+    "fedramp_20x": [
+      "KSI-CNA-MAT",
+      "KSI-CNA-RNT",
+      "KSI-CNA-ULN"
+    ],
     "iso27001": [
       "A.8.20",
       "A.8.22"
@@ -16,6 +21,28 @@
   },
   "data": {
     "exposed_groups": 1,
+    "resources": [
+      {
+        "attributes": {
+          "all_traffic": false,
+          "open_to_internet_ports": []
+        },
+        "compliant": true,
+        "id": "sg-8a8b1ae041a6985dc",
+        "type": "AWS::EC2::SecurityGroup"
+      },
+      {
+        "attributes": {
+          "all_traffic": false,
+          "open_to_internet_ports": [
+            22
+          ]
+        },
+        "compliant": false,
+        "id": "sg-e70e730ea5b4180c0",
+        "type": "AWS::EC2::SecurityGroup"
+      }
+    ],
     "security_groups": 2,
     "sensitive_ports": [
       22,
@@ -32,7 +59,7 @@
   "provider": "aws",
   "region": "us-east-1",
   "schema_version": "1.0",
-  "sha256": "639dd515fc0567bc2a89e2c63605b43b5adbca3d1efc7a47d5ae1672b5b8e6b1",
+  "sha256": "95675371d70f85b7e112d7a683ec547dbeb86cc18a24e9207b87cd9be9cc25d2",
   "status": "fail",
   "summary": "2 security group(s) examined; 1 expose sensitive ports to the internet",
   "title": "Security groups open to the internet"
