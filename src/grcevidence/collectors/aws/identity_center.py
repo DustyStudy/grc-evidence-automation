@@ -7,6 +7,7 @@ from functools import cache
 from typing import Any
 from urllib.parse import urlsplit
 
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 
 from grcevidence.collectors.aws.policy import (
@@ -15,7 +16,15 @@ from grcevidence.collectors.aws.policy import (
     conditional,
     fetch_document,
 )
-from grcevidence.collectors.base import Collector, Context, Result, paginate, register, resource
+from grcevidence.collectors.base import (
+    _BOTO_CONFIG,
+    Collector,
+    Context,
+    Result,
+    paginate,
+    register,
+    resource,
+)
 from grcevidence.models import Finding, Severity, Status
 
 LIMITATIONS = [
@@ -45,10 +54,16 @@ class IdentityCenter(Collector):
     )
 
     def collect(self, ctx: Context) -> Result:
-        sso = ctx.client("sso-admin")
-        store = ctx.client("identitystore")
-        # botocore endpoint rules: GovCloud FIPS is the standard sso./identitystore.<region>
-        # host; commercial builds sso-fips./identitystore-fips.<region>, which has no DNS records.
+        # Commercial FIPS hosts exist only on the dual-stack domain (sso-fips.<region>.api.aws,
+        # US and Canada regions); GovCloud FIPS is the standard sso./identitystore.<region> host.
+        if ctx.use_fips_endpoint and ctx.partition == "aws":
+            dual = _BOTO_CONFIG.merge(BotoConfig(use_dualstack_endpoint=True))
+            sso, store = (
+                ctx.session.client(svc, region_name=ctx.region, config=dual)
+                for svc in ("sso-admin", "identitystore")
+            )
+        else:
+            sso, store = ctx.client("sso-admin"), ctx.client("identitystore")
         if ctx.use_fips_endpoint and not all(_resolves(c) for c in (sso, store)):
             return Result(
                 summary=f"Could not collect: no FIPS endpoint for IAM Identity Center in {ctx.region}",

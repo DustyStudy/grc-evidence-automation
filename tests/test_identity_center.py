@@ -4,14 +4,18 @@ backend; AWS managed policies need MOTO_IAM_LOAD_MANAGED_POLICIES). One gap is s
 ignores ListAccountsForProvisionedPermissionSet's ProvisioningStatus filter (every provisioned set
 would read as stale), so the autouse `stale` fixture patches moto's response handler to answer
 that filter from a dict the test fills. The FIPS tests use the real FIPS session with
-socket.getaddrinfo patched, and the non-NotFound identitystore error uses a tiny fake client."""
+socket.getaddrinfo patched (moto does not match the dual-stack .api.aws FIPS hosts, so a
+before-send hook answers ListInstances), and the non-NotFound identitystore error uses a tiny
+fake client."""
 
 from __future__ import annotations
 
+import io
 import json
 import socket
 
 import pytest
+from botocore.awsrequest import AWSResponse
 from botocore.exceptions import ClientError
 from moto.ssoadmin.models import ssoadmin_backends
 from moto.ssoadmin.responses import SSOAdminResponse
@@ -174,25 +178,67 @@ def test_identity_center_respects_the_cap(make_ctx, session):
     assert len(ev.data["resources"]) == 1
 
 
-def test_identity_center_without_fips_endpoint_is_an_error(make_ctx, monkeypatch):
-    def no_dns(*_args, **_kwargs):
+@pytest.mark.parametrize(
+    ("region", "hosts"),
+    [
+        ("eu-west-1", ["sso-fips.eu-west-1.api.aws", "identitystore-fips.eu-west-1.api.aws"]),
+        (
+            "cn-north-1",
+            [
+                "sso-fips.cn-north-1.amazonaws.com.cn",
+                "identitystore-fips.cn-north-1.amazonaws.com.cn",
+            ],
+        ),
+    ],
+)
+def test_identity_center_without_fips_endpoint_is_an_error(make_ctx, monkeypatch, region, hosts):
+    seen = []
+
+    def no_dns(host, *_args, **_kwargs):
+        seen.append(host)
         raise socket.gaierror("no address")
 
     monkeypatch.setattr(socket, "getaddrinfo", no_dns)
-    ctx = make_ctx()
-    ctx.session, ctx.use_fips_endpoint = real_aws_session(True, region_name="us-east-1"), True
+    ctx = make_ctx(region)
+    ctx.session, ctx.use_fips_endpoint = real_aws_session(True, region_name=region), True
     ev = IdentityCenter().execute(ctx)
     assert ev.status == Status.ERROR
-    assert "no FIPS endpoint for IAM Identity Center in us-east-1" in ev.summary
+    assert f"no FIPS endpoint for IAM Identity Center in {region}" in ev.summary
+    assert seen == hosts[:1]  # the first unresolvable host settles it
 
 
-def test_identity_center_with_reachable_fips_endpoint_collects(make_ctx, monkeypatch):
-    seen = []
+class _Raw(io.BytesIO):
+    def stream(self, **_kwargs):
+        yield self.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("region", "hosts"),
+    [
+        ("us-east-1", ["sso-fips.us-east-1.api.aws", "identitystore-fips.us-east-1.api.aws"]),
+        (
+            "us-gov-west-1",
+            ["sso.us-gov-west-1.amazonaws.com", "identitystore.us-gov-west-1.amazonaws.com"],
+        ),
+    ],
+)
+def test_identity_center_with_reachable_fips_endpoint_collects(
+    make_ctx, monkeypatch, region, hosts
+):
+    """moto only matches *.amazonaws.com, so ListInstances is answered by a before-send hook."""
+    seen, urls = [], []
     monkeypatch.setattr(socket, "getaddrinfo", lambda host, port: seen.append(host) or [])
-    ctx = make_ctx()
-    ctx.use_fips_endpoint = True  # moto session: hosts are standard, the resolve check is patched
+    ctx = make_ctx(region)
+    ctx.session, ctx.use_fips_endpoint = real_aws_session(True, region_name=region), True
+
+    def no_instances(request, **_kwargs):
+        urls.append(request.url)
+        return AWSResponse(request.url, 200, {}, _Raw(b'{"Instances": []}'))
+
+    ctx.session.events.register("before-send.sso-admin.ListInstances", no_instances)
     assert IdentityCenter().execute(ctx).status == Status.NOT_APPLICABLE
-    assert seen == ["sso.us-east-1.amazonaws.com", "identitystore.us-east-1.amazonaws.com"]
+    assert seen == hosts
+    assert urls == [f"https://{hosts[0]}/"]
 
 
 def test_principal_name_reraises_other_errors():
