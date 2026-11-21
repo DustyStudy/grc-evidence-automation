@@ -43,7 +43,7 @@ locals {
     "kms:DescribeKey",
     "kms:GetKeyRotationStatus",
     "kms:ListKeys",
-    "lambda:ListFunctions",
+    "lambda:GetAccountSettings",
     "rds:DescribeDBInstances",
     "s3:GetBucketPolicyStatus",
     "s3:GetBucketPublicAccessBlock",
@@ -109,6 +109,19 @@ data "aws_iam_policy_document" "function" {
     sid       = "ReadOwnAccountConfiguration"
     actions   = local.collector_read_actions
     resources = ["*"]
+  }
+
+  # apigateway:GET on "*" would also return API key values; collectors never read them.
+  statement {
+    sid     = "DenyApiKeyValues"
+    effect  = "Deny"
+    actions = ["apigateway:GET"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/apikeys",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/apikeys/*",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/usageplans/*/keys",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/usageplans/*/keys/*",
+    ]
   }
 
   dynamic "statement" {

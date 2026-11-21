@@ -80,7 +80,7 @@ locals {
     "kms:DescribeKey",
     "kms:GetKeyRotationStatus",
     "kms:ListKeys",
-    "lambda:ListFunctions",
+    "lambda:GetAccountSettings",
     "rds:DescribeDBInstances",
     "s3:GetBucketPolicyStatus",
     "s3:GetBucketPublicAccessBlock",
@@ -106,6 +106,8 @@ locals {
   ]
 }
 
+data "aws_partition" "current" {}
+
 data "aws_iam_policy_document" "trust" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -128,6 +130,19 @@ data "aws_iam_policy_document" "read" {
     sid       = "ReadOnlyEvidenceCollection"
     actions   = local.collector_read_actions
     resources = ["*"]
+  }
+
+  # apigateway:GET on "*" would also return API key values; collectors never read them.
+  statement {
+    sid     = "DenyApiKeyValues"
+    effect  = "Deny"
+    actions = ["apigateway:GET"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/apikeys",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/apikeys/*",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/usageplans/*/keys",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/usageplans/*/keys/*",
+    ]
   }
 }
 
