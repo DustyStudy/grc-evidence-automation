@@ -96,16 +96,21 @@ nist_800_53:
   AU-2: {title: "Event logging", type: technical}
   AU-9: {title: "Protection of audit information", type: technical}
   AU-12: {title: "Audit record generation", type: technical}
+  CA-7: {title: "Continuous monitoring", type: technical}
   CM-2: {title: "Baseline configuration", type: technical}
   CM-6: {title: "Configuration settings", type: technical}
   CP-9: {title: "System backup", type: technical}
   IA-2: {title: "Identification and authentication (organizational users)", type: technical}
   IA-5: {title: "Authenticator management", type: technical}
   RA-5: {title: "Vulnerability monitoring and scanning", type: technical}
+  SC-5: {title: "Denial-of-service protection", type: technical}
   SC-7: {title: "Boundary protection", type: technical}
+  SC-8: {title: "Transmission confidentiality and integrity", type: technical}
   SC-12: {title: "Cryptographic key establishment and management", type: technical}
   SC-13: {title: "Cryptographic protection", type: technical}
+  SC-17: {title: "Public key infrastructure certificates", type: technical}
   SC-28: {title: "Protection of information at rest", type: technical}
+  SI-2: {title: "Flaw remediation", type: technical}
   SI-4: {title: "System monitoring", type: technical}
 
 fedramp_20x:

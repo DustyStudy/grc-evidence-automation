@@ -2,17 +2,30 @@ locals {
   # Read-only actions the AWS collectors use. `grc-evidence permissions` prints the same
   # list from the collector definitions; tests/test_terraform_consistency.py keeps them in sync.
   collector_read_actions = [
+    "acm:ListCertificates",
+    "apigateway:GET",
     "backup:ListBackupPlans",
     "cloudformation:ListResources",
+    "cloudfront:ListDistributions",
     "cloudtrail:DescribeTrails",
     "cloudtrail:GetTrailStatus",
+    "config:DescribeComplianceByConfigRule",
+    "config:DescribeConfigRuleEvaluationStatus",
+    "config:DescribeConfigRules",
     "config:DescribeConfigurationRecorderStatus",
     "config:DescribeConfigurationRecorders",
     "ec2:DescribeFlowLogs",
+    "ec2:DescribeInstances",
     "ec2:DescribeRegions",
     "ec2:DescribeSecurityGroups",
     "ec2:DescribeVpcs",
     "ec2:GetEbsEncryptionByDefault",
+    "ecr:DescribeRepositories",
+    "ecr:GetRegistryScanningConfiguration",
+    "eks:DescribeCluster",
+    "eks:ListClusters",
+    "elasticloadbalancing:DescribeLoadBalancers",
+    "elasticloadbalancing:GetLoadBalancerWebACL",
     "guardduty:GetDetector",
     "guardduty:ListDetectors",
     "iam:GenerateCredentialReport",
@@ -24,16 +37,24 @@ locals {
     "iam:GetPolicyVersion",
     "identitystore:DescribeGroup",
     "identitystore:DescribeUser",
+    "inspector2:BatchGetAccountStatus",
+    "inspector2:ListCoverage",
+    "inspector2:ListFindingAggregations",
     "kms:DescribeKey",
     "kms:GetKeyRotationStatus",
     "kms:ListKeys",
+    "lambda:GetAccountSettings",
     "rds:DescribeDBInstances",
     "s3:GetBucketPolicyStatus",
     "s3:GetBucketPublicAccessBlock",
     "s3:GetBucketVersioning",
     "s3:GetEncryptionConfiguration",
     "s3:ListAllMyBuckets",
+    "secretsmanager:ListSecrets",
     "securityhub:DescribeHub",
+    "securityhub:DescribeStandards",
+    "securityhub:GetEnabledStandards",
+    "securityhub:GetFindings",
     "sso:DescribePermissionSet",
     "sso:GetInlinePolicyForPermissionSet",
     "sso:ListAccountAssignments",
@@ -43,6 +64,8 @@ locals {
     "sso:ListManagedPoliciesInPermissionSet",
     "sso:ListPermissionSets",
     "sts:GetCallerIdentity",
+    "wafv2:GetWebACL",
+    "wafv2:GetWebACLForResource",
   ]
 }
 
@@ -86,6 +109,19 @@ data "aws_iam_policy_document" "function" {
     sid       = "ReadOwnAccountConfiguration"
     actions   = local.collector_read_actions
     resources = ["*"]
+  }
+
+  # apigateway:GET on "*" would also return API key values; collectors never read them.
+  statement {
+    sid     = "DenyApiKeyValues"
+    effect  = "Deny"
+    actions = ["apigateway:GET"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/apikeys",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/apikeys/*",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/usageplans/*/keys",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/usageplans/*/keys/*",
+    ]
   }
 
   dynamic "statement" {
