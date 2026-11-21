@@ -17,3 +17,8 @@ output "function_role_arn" {
   description = "Trust this role from each member account's reader role (see ./reader_role)."
   value       = aws_iam_role.function.arn
 }
+
+output "signing_key_arn" {
+  description = "Key signing each run manifest (null when enable_signing is false). Verifiers pin it with `grc-evidence verify --key-id <arn>`."
+  value       = one(aws_kms_key.signing[*].arn)
+}

@@ -134,7 +134,7 @@ def test_local_sink_report_and_verify_roundtrip(tmp_path):
     assert result.sink_results and not result.failed_sinks
     run_dir = latest_run_dir(tmp_path)
     assert (run_dir / "manifest.json").exists()
-    assert verify_run(tmp_path) == []
+    assert verify_run(tmp_path).problems == []
 
     manifest, evidence = load_run(tmp_path)
     assert manifest.run_id == result.manifest.run_id and len(evidence) == len(result.evidence)
@@ -157,17 +157,17 @@ def test_verify_detects_tampering_missing_and_extra_files(tmp_path):
     doc["status"] = "pass"
     doc["summary"] = "edited"
     files[0].write_text(json.dumps(doc))
-    assert any("sha256" in p for p in verify_run(tmp_path))
+    assert any("sha256" in p for p in verify_run(tmp_path).problems)
 
     files[1].unlink()
     (run_dir / "rogue.json").write_text("{}")
-    problems = " ".join(verify_run(tmp_path))
+    problems = " ".join(verify_run(tmp_path).problems)
     assert "missing" in problems and "not in manifest" in problems
 
     m = json.loads((run_dir / "manifest.json").read_text())
     m["counts"] = {"pass": 999}
     (run_dir / "manifest.json").write_text(json.dumps(m))
-    assert "manifest hash" in " ".join(verify_run(tmp_path))
+    assert "manifest hash" in " ".join(verify_run(tmp_path).problems)
 
 
 def test_rollup_precedence_error_is_not_pass():
@@ -241,7 +241,7 @@ def test_deliver_continues_after_a_failing_sink(tmp_path):
     result = run(_config(collectors={"include": ["aws.kms_rotation"]}), now=NOW)
     deliver(result, [S3Sink("no-such-bucket"), LocalSink(tmp_path)])
     assert list(result.failed_sinks) == ["s3://no-such-bucket/evidence"]
-    assert verify_run(tmp_path) == []
+    assert verify_run(tmp_path).problems == []
 
 
 # -------------------------------------------------------------------------- HTTP
@@ -469,7 +469,11 @@ def test_lambda_handler_dry_run_and_delivery(monkeypatch, tmp_path):
     dry = handler({"dry_run": True})
     assert dry["dry_run"] and not list(tmp_path.iterdir())
     out = handler({})
-    assert out["counts"] and list(out["sinks"].values()) == ["ok"] and verify_run(tmp_path) == []
+    assert (
+        out["counts"]
+        and list(out["sinks"].values()) == ["ok"]
+        and verify_run(tmp_path).problems == []
+    )
     subset = handler({"collectors": ["aws.iam_password_policy"]})
     assert subset["counts"] == {"fail": 1}
 
@@ -482,12 +486,16 @@ def test_lambda_handler_refuses_to_run_without_sinks(monkeypatch):
         handler({})
 
 
-def test_lambda_handler_raises_when_a_sink_fails(monkeypatch):
+def test_lambda_handler_raises_when_a_sink_fails(monkeypatch, tmp_path):
     from grcevidence.lambda_handler import handler
 
     cfg = {
         "collectors": {"include": ["aws.kms_rotation"]},
-        "sinks": [{"type": "s3", "bucket": "missing-bucket"}],
+        # The local sink is the primary store (chain head); the missing bucket fails on write.
+        "sinks": [
+            {"type": "local", "path": str(tmp_path)},
+            {"type": "s3", "bucket": "missing-bucket"},
+        ],
     }
     monkeypatch.setenv("GRC_CONFIG", json.dumps(cfg))
     with pytest.raises(RuntimeError, match="delivery failed"):
@@ -604,7 +612,7 @@ def test_manifest_cannot_point_outside_its_run_directory(tmp_path, bad):
     m["evidence"][0]["file"] = bad
     (run_dir / "manifest.json").write_text(json.dumps(m))
 
-    problems = " ".join(verify_run(tmp_path))
+    problems = " ".join(verify_run(tmp_path).problems)
     assert "unsafe evidence file name" in problems
     with pytest.raises(ValueError, match="unsafe evidence file name"):
         load_run(tmp_path)

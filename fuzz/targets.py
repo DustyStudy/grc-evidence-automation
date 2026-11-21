@@ -200,7 +200,7 @@ def verify(data: bytes) -> None:
     r = Reader(data)
     with tempfile.TemporaryDirectory(prefix="grc-fuzz-") as tmp:
         run_dir, result = _write_run(Path(tmp), r)
-        assert verify_run(run_dir) == [], "an untouched run failed verification"
+        assert verify_run(run_dir).problems == [], "an untouched run failed verification"
 
         files = sorted(p for p in run_dir.glob("*.json") if p.name != "manifest.json")
         victim = files[r.below(len(files))]
@@ -235,7 +235,7 @@ def verify(data: bytes) -> None:
         else:  # drop an entry so its file becomes an unlisted extra
             del manifest["evidence"][0]
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        assert verify_run(run_dir), f"tampering (kind {kind}) went undetected"
+        assert verify_run(run_dir).problems, f"tampering (kind {kind}) went undetected"
         assert result.evidence  # keep the run object alive for readers of a failing case
 
 

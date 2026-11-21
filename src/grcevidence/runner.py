@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,9 @@ from grcevidence.models import (
     RunResult,
     Severity,
     Status,
+    _plain,
+    canonical_json,
+    kms_region,
     utc_iso,
 )
 from grcevidence.sinks import HttpSink, LocalSink, S3Sink, Sink, SinkError
@@ -50,6 +54,7 @@ class Config:
     gcp_projects: list[str] = field(default_factory=list)
     sinks: list[dict[str, Any]] = field(default_factory=list)
     use_fips_endpoint: bool = True  # every AWS client calls FIPS 140 validated endpoints
+    signing_key_id: str | None = None  # asymmetric KMS key that signs each run manifest
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Config:
@@ -63,6 +68,7 @@ class Config:
             "gcp",
             "sinks",
             "use_fips_endpoint",
+            "signing",
         }
         if unknown := set(raw) - allowed:
             raise ConfigError(f"unknown config key(s): {sorted(unknown)}")
@@ -90,6 +96,14 @@ class Config:
             raise ConfigError("use_fips_endpoint must be true or false")
         if not all(isinstance(s, dict) for s in sinks):
             raise ConfigError("each sink must be a mapping")
+        signing_key_id = None
+        if raw.get("signing") is not None:
+            signing = _mapping(raw["signing"], "signing")
+            if unknown := set(signing) - {"kms_key_id"}:
+                raise ConfigError(f"unknown signing key(s): {sorted(unknown)}")
+            signing_key_id = signing.get("kms_key_id")
+            if not isinstance(signing_key_id, str) or not signing_key_id.strip():
+                raise ConfigError("signing.kms_key_id must be a non-empty string")
         return cls(
             accounts=accounts,
             regions=_strings(raw.get("regions") or ["us-east-1"], "regions"),
@@ -101,6 +115,7 @@ class Config:
             ),
             sinks=sinks,
             use_fips_endpoint=use_fips,
+            signing_key_id=signing_key_id,
         )
 
     @classmethod
@@ -207,6 +222,17 @@ def _access_error(account: str, exc: Exception, now: datetime) -> Evidence:
     ).seal()
 
 
+def _chain_head(sinks: list[Sink] | None, run_id: str) -> dict[str, str] | None:
+    """Link to the newest earlier run in the primary durable store (first local or S3 sink).
+
+    A failed lookup raises (via the sink's SinkError) rather than starting a new chain: a false
+    genesis would hide a break in the chain.
+    """
+    store = next((s for s in sinks or [] if isinstance(s, LocalSink | S3Sink)), None)
+    head = store.latest_manifest(before=run_id) if store else None
+    return None if head is None else {"run_id": head["run_id"], "sha256": head["sha256"]}
+
+
 def run(
     config: Config,
     *,
@@ -214,8 +240,13 @@ def run(
     now: datetime | None = None,
     collectors: list[type[Collector]] | None = None,
     gcp_clients: Any = None,
+    sinks: list[Sink] | None = None,
 ) -> RunResult:
-    """Run every selected collector across accounts/regions and return sealed evidence."""
+    """Run every selected collector across accounts/regions and return sealed evidence.
+
+    ``sinks`` are where the run will be delivered; the first local or S3 sink supplies the
+    previous run this manifest links to.
+    """
 
     started = now or datetime.now(UTC)
     base = session or aws_session(config.use_fips_endpoint)
@@ -256,7 +287,9 @@ def run(
             evidence.append(cls().execute(ctx))
 
     finished = datetime.now(UTC) if now is None else started
-    run_id = f"{started.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    # Microseconds so back-to-back runs sort in order: the chain lookup and verify rely on it.
+    run_id = f"{started.strftime('%Y%m%dT%H%M%S%fZ')}-{uuid.uuid4().hex[:8]}"
+    previous = _chain_head(sinks, run_id)
     manifest = RunManifest(
         run_id=run_id,
         started_at=utc_iso(started),
@@ -268,7 +301,20 @@ def run(
             {"id": e.id, "file": e.filename, "status": e.status.value, "sha256": e.sha256}
             for e in evidence
         ],
+        collectors=sorted(c.id for c in chosen),
+        parameters=_plain(asdict(config.parameters)),
+        config_sha256=hashlib.sha256(canonical_json(asdict(config))).hexdigest(),
+        previous=previous,
     ).seal()
+    if config.signing_key_id:
+        kms = base.client("kms", region_name=kms_region(config.signing_key_id))
+        try:
+            manifest.sign(kms, config.signing_key_id)
+        except (ClientError, BotoCoreError) as exc:
+            # Never deliver an unsigned manifest when signing is configured.
+            raise SinkError(
+                f"signing the run manifest with {config.signing_key_id} failed: {exc}"
+            ) from exc
     return RunResult(manifest=manifest, evidence=evidence)
 
 

@@ -8,6 +8,7 @@ only configuration facts (booleans, counts, identifiers) and findings.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -16,7 +17,21 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "2.0"
+# Stored with the v1 manifest field set; still verifiable, but carry no signature or chain link.
+LEGACY_SCHEMA_VERSIONS = {"1.0"}
+_V1_MANIFEST_FIELDS = (
+    "run_id",
+    "started_at",
+    "finished_at",
+    "tool_version",
+    "accounts",
+    "counts",
+    "evidence",
+    "schema_version",
+    "sha256",
+)
+SIGNING_ALGORITHM = "ECDSA_SHA_256"
 
 
 class Status(StrEnum):
@@ -138,12 +153,25 @@ class RunManifest:
     accounts: list[str]
     counts: dict[str, int]
     evidence: list[dict[str, str]]
+    collectors: list[str] = field(default_factory=list)  # selected collector ids
+    parameters: dict[str, Any] = field(default_factory=dict)  # thresholds judged against
+    config_sha256: str = ""  # effective config, which holds secret references, never values
+    previous: dict[str, str] | None = None  # {"run_id", "sha256"} of the prior run; None = genesis
     schema_version: str = SCHEMA_VERSION
     sha256: str = ""
+    signature: dict[str, str] | None = None  # KMS signature over sha256
+
+    @property
+    def legacy(self) -> bool:
+        return (
+            isinstance(self.schema_version, str) and self.schema_version in LEGACY_SCHEMA_VERSIONS
+        )
 
     def content_hash(self) -> str:
-        body = asdict(self)
+        """SHA-256 over everything except the hash and the signature (which signs the hash)."""
+        body = self.to_dict()
         body.pop("sha256", None)
+        body.pop("signature", None)
         return hashlib.sha256(canonical_json(body)).hexdigest()
 
     def seal(self) -> RunManifest:
@@ -153,12 +181,35 @@ class RunManifest:
     def verify(self) -> bool:
         return bool(self.sha256) and self.sha256 == self.content_hash()
 
+    def sign(self, kms: Any, key_id: str) -> RunManifest:
+        """Sign the sealed hash with an asymmetric KMS key (``kms`` is a boto3 KMS client)."""
+        resp = kms.sign(
+            KeyId=key_id,
+            Message=bytes.fromhex(self.sha256),
+            MessageType="DIGEST",
+            SigningAlgorithm=SIGNING_ALGORITHM,
+        )
+        self.signature = {
+            "key_id": resp["KeyId"],
+            "algorithm": SIGNING_ALGORITHM,
+            "value": base64.b64encode(resp["Signature"]).decode(),
+        }
+        return self
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        # Stored v1 manifests were hashed over exactly these fields; keep them byte-for-byte.
+        return {k: d[k] for k in _V1_MANIFEST_FIELDS} if self.legacy else d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> RunManifest:
         return cls(**d)
+
+
+def kms_region(key_id: str) -> str | None:
+    """Region of a KMS key or alias ARN (``arn:<partition>:kms:<region>:...``); None otherwise."""
+    parts = key_id.split(":")
+    return (parts[3] or None) if key_id.startswith("arn:") and len(parts) > 4 else None
 
 
 @dataclass

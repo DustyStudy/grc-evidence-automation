@@ -2,22 +2,36 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from grcevidence.catalog import FRAMEWORK_LABELS, FRAMEWORKS, controls
-from grcevidence.models import Evidence, RunManifest, Status
+from grcevidence.models import SCHEMA_VERSION, Evidence, RunManifest, Status, kms_region
 
 NO_EVIDENCE = "no_automated_evidence"
 
 
+def run_dirs(path: Path) -> list[Path]:
+    """``[path]`` for a run directory, else every run directory below it, oldest first.
+
+    Recursive, so an ``aws s3 sync`` copy with ``dt=`` partitions works; run ids start with a
+    UTC timestamp, so sorting by directory name is chronological.
+    """
+    if (path / "manifest.json").exists():
+        return [path]
+    return sorted(
+        (m.parent for m in path.rglob("manifest.json") if m.is_file()), key=lambda p: p.name
+    )
+
+
 def latest_run_dir(path: Path) -> Path:
     """Accept a run directory itself or a parent containing run directories."""
-    if (path / "manifest.json").exists():
-        return path
-    runs = sorted(p for p in path.iterdir() if p.is_dir() and (p / "manifest.json").exists())
+    runs = run_dirs(path)
     if not runs:
         raise FileNotFoundError(f"no completed run (manifest.json) found under {path}")
     return runs[-1]
@@ -71,17 +85,41 @@ def load_run(path: str | Path) -> tuple[RunManifest, list[Evidence]]:
     return manifest, evidence
 
 
-def verify_run(path: str | Path) -> list[str]:
-    """Check every stored record against its own hash and the manifest. Empty list = intact."""
-    run_dir = latest_run_dir(Path(path))
+@dataclass
+class VerifyResult:
+    problems: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    runs: int = 0
+    signatures: int = 0  # signatures checked and valid
+    unsigned: int = 0  # schema 2.0 runs without a signature
+    chain_checked: bool = False
+
+    def __bool__(self) -> bool:
+        """True when nothing was found wrong."""
+        return not self.problems
+
+
+KmsFactory = Callable[[str], Any]
+
+
+def _default_kms() -> KmsFactory:
+    """KMS clients from the FIPS-aware session, one per region, created only when needed."""
+    clients: dict[str | None, Any] = {}
+
+    def get(key_id: str) -> Any:
+        from grcevidence import runner  # boto3 only once a signed manifest is actually checked
+
+        region = kms_region(key_id)
+        if region not in clients:
+            clients[region] = runner.aws_session().client("kms", region_name=region)
+        return clients[region]
+
+    return get
+
+
+def _check_files(run_dir: Path, manifest: RunManifest) -> list[str]:
+    """Every stored record against its own hash and the manifest entry."""
     problems: list[str] = []
-    try:
-        manifest = _read_manifest(run_dir)
-    except ValueError as exc:
-        # Tampered or damaged content is a finding to report, not a reason to crash.
-        return [str(exc)]
-    if not manifest.verify():
-        problems.append("manifest hash does not match its contents")
     listed = {}
     for item in manifest.evidence:
         name = item.get("file") if isinstance(item, dict) else None
@@ -107,6 +145,168 @@ def verify_run(path: str | Path) -> list[str]:
         elif ev.sha256 != item.get("sha256"):
             problems.append(f"{name}: sha256 differs from the manifest entry")
     return problems
+
+
+def _check_signature(
+    m: RunManifest, kms: KmsFactory, key_id: str | None, result: VerifyResult, tag: str
+) -> None:
+    sig = m.signature
+    if sig is None:
+        if key_id:
+            result.problems.append(f"{tag}unsigned but a signing key was required")
+        else:
+            result.notes.append(f"{tag}unsigned")
+        return
+    try:
+        value = base64.b64decode(sig["value"], validate=True)
+        signer, algorithm = sig["key_id"], sig["algorithm"]
+        if not (isinstance(signer, str) and isinstance(algorithm, str) and value):
+            raise ValueError
+    except (TypeError, KeyError, ValueError):  # binascii.Error is a ValueError
+        result.problems.append(f"{tag}signature is malformed")
+        return
+    key = key_id or signer
+    try:
+        resp = kms(key).verify(
+            KeyId=key,
+            Message=bytes.fromhex(m.sha256),
+            MessageType="DIGEST",
+            Signature=value,
+            SigningAlgorithm=algorithm,
+        )
+        valid = resp.get("SignatureValid") is True
+    except Exception as exc:  # anything left unchecked must not pass as OK
+        code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+        if code != "KMSInvalidSignatureException":
+            result.problems.append(f"{tag}signature could not be checked: {exc}")
+            return
+        valid = False
+    if valid:
+        result.signatures += 1
+    else:
+        result.problems.append(f"{tag}signature INVALID")
+
+
+def _check_chain(runs: list[tuple[str, RunManifest | None]], result: VerifyResult) -> None:
+    """Each v2 run must name the run stored immediately before it, with that run's sha256."""
+    ids = {m.run_id for _, m in runs if m is not None and isinstance(m.run_id, str)}
+    seen_v2 = seen_signed = False
+    for i, (name, m) in enumerate(runs):
+        if m is None or not (m.legacy or m.schema_version == SCHEMA_VERSION):
+            continue  # unreadable or unknown schema: already reported
+        tag = f"{name}: "
+        if m.legacy:
+            if seen_v2:
+                result.problems.append(
+                    f"{tag}schema {m.schema_version} run after a schema {SCHEMA_VERSION} run "
+                    "(downgraded?)"
+                )
+            continue
+        seen_v2 = True
+        if m.signature is not None:
+            seen_signed = True
+        elif seen_signed:
+            result.problems.append(f"{tag}unsigned after signed runs (signature stripped?)")
+        prev = m.previous
+        before = runs[i - 1][1] if i else None
+        if prev is None:
+            if i:
+                result.problems.append(f"{tag}claims genesis but earlier runs exist")
+            continue
+        if not (
+            isinstance(prev, dict)
+            and set(prev) == {"run_id", "sha256"}
+            and all(isinstance(v, str) for v in prev.values())
+        ):
+            result.problems.append(f"{tag}previous-run link is malformed")
+            continue
+        if before is not None and prev["run_id"] == before.run_id:
+            if prev["sha256"] != before.sha256:
+                result.problems.append(
+                    f"{tag}previous run {prev['run_id']} was rewritten "
+                    "(its sha256 differs from the link)"
+                )
+        elif prev["run_id"] in ids:
+            result.problems.append(
+                f"{tag}links to {prev['run_id']}, not to the run stored before it "
+                "(reordered or forked)"
+            )
+        elif i == 0:
+            result.notes.append(
+                f"{tag}previous run {prev['run_id']} is not here "
+                "(expired by lifecycle, or outside this directory)"
+            )
+        elif before is not None:
+            result.problems.append(f"{tag}previous run {prev['run_id']} is missing (deleted?)")
+
+
+def verify_run(
+    path: str | Path,
+    *,
+    kms: KmsFactory | None = None,
+    key_id: str | None = None,
+    check_signature: bool = True,
+) -> VerifyResult:
+    """Verify one run directory, or every run below a parent directory and the chain between them.
+
+    ``kms`` maps a key id to a KMS client (default: the FIPS-aware session). ``key_id`` pins the
+    expected signing key: unsigned runs then fail, and signatures are checked against that key
+    instead of the one the manifest names (which a forger could have chosen).
+    """
+    path = Path(path)
+    dirs = run_dirs(path)
+    if not dirs:
+        raise FileNotFoundError(f"no completed run (manifest.json) found under {path}")
+    single = dirs == [path]
+    kms = kms or _default_kms()
+    result = VerifyResult(runs=len(dirs))
+    runs: list[tuple[str, RunManifest | None]] = []
+    for run_dir in dirs:
+        tag = "" if single else f"{run_dir.name}: "
+        try:
+            m = _read_manifest(run_dir)
+        except ValueError as exc:
+            # Tampered or damaged content is a finding to report, not a reason to crash.
+            result.problems.append(f"{tag}{exc}")
+            runs.append((run_dir.name, None))
+            continue
+        runs.append((run_dir.name, m))
+        if m.run_id != run_dir.name:
+            result.problems.append(f"{tag}directory name does not match run_id {m.run_id!r}")
+        current = m.schema_version == SCHEMA_VERSION
+        if m.legacy:
+            result.notes.append(
+                f"{tag}legacy schema {m.schema_version}: no signature or chain fields"
+            )
+        elif not current:
+            result.problems.append(f"{tag}unknown schema_version {m.schema_version!r}")
+        intact = m.verify()
+        if not intact:
+            result.problems.append(f"{tag}manifest hash does not match its contents")
+        result.problems.extend(tag + p for p in _check_files(run_dir, m))
+        if current and m.signature is None:
+            result.unsigned += 1
+        # A signature over a hash that does not match the content proves nothing.
+        if intact and current:
+            if check_signature:
+                _check_signature(m, kms, key_id, result, tag)
+            else:
+                result.notes.append(f"{tag}signature not checked (--skip-signature)")
+    if key_id and not any(m is not None and m.schema_version == SCHEMA_VERSION for _, m in runs):
+        result.problems.append(
+            f"no signed schema {SCHEMA_VERSION} run; a pinned key requires at least one"
+        )
+    if result.signatures and not key_id:
+        result.notes.append(
+            "signature checked against the key named in the manifest; "
+            "pass --key-id to pin the expected key"
+        )
+    if single:
+        result.notes.append("chain: single run; verify the parent directory to check links")
+    else:
+        _check_chain(runs, result)
+        result.chain_checked = True
+    return result
 
 
 @dataclass
