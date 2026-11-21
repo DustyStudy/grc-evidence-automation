@@ -12,6 +12,12 @@ public, and the target was a real account in the maintainer's org. What's kept
 is the shape and outcome of each step: status codes, resource counts, error
 text (generic AWS messages, not account-specific), and pass/fail.
 
+**Scope note:** this run predates manifest signing and the run hash chain
+(evidence schema 2.0). It exercised unsigned schema 1.0 manifests, which the
+current `verify` still accepts and reports as legacy. KMS signing
+(`kms:Sign`/`kms:Verify`) and the chain lookup against a real bucket have not
+been run live yet; they are covered by `moto`-based tests only.
+
 - **Environment:** Windows 11, Python 3.14.7, Terraform 1.15.8, AWS provider
   ~> 6.0 (resolved 6.66.0), against a near-empty sandbox member account
   (default VPC only, no other resources) of a real AWS Organization.

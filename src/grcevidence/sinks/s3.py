@@ -14,7 +14,7 @@ from typing import Any
 from botocore.exceptions import BotoCoreError, ClientError
 
 from grcevidence.models import RunResult
-from grcevidence.sinks.base import SinkError
+from grcevidence.sinks.base import SinkError, chain_candidate
 
 
 class S3Sink:
@@ -60,3 +60,44 @@ class S3Sink:
         except (ClientError, BotoCoreError) as exc:
             raise SinkError(f"S3 write to {self.name} failed: {exc}") from exc
         return len(run.evidence) + 1
+
+    def _list(self, prefix: str, delimiter: bool) -> list[str]:
+        """Sub-prefixes (``delimiter``) or keys under ``prefix``, newest (lexically greatest) first."""
+        paginator = self._s3.get_paginator("list_objects_v2")
+        if delimiter:
+            pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter="/")
+            return sorted(
+                (p["Prefix"] for page in pages for p in page.get("CommonPrefixes", [])),
+                reverse=True,
+            )
+        pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix)
+        return sorted((o["Key"] for page in pages for o in page.get("Contents", [])), reverse=True)
+
+    def latest_manifest(self, before: str) -> dict[str, Any] | None:
+        """Newest well-formed run manifest whose run id sorts before ``before``, else None.
+
+        Walks ``dt=`` partitions newest first, skipping any later than ``before``'s date (a
+        future-dated plant), and takes ``<run_id>/manifest.json`` keys newest first (run ids
+        start with a UTC timestamp), so it never lists the whole bucket. Only listed keys are
+        fetched: a GetObject on a missing key is a 403, not a 404, when s3:ListBucket is granted
+        only under an s3:prefix condition.
+        """
+        newest = f"{self.prefix}/dt={before[:4]}-{before[4:6]}-{before[6:8]}/"
+        try:
+            for partition in self._list(f"{self.prefix}/dt=", delimiter=True):
+                if partition > newest:
+                    continue
+                for key in self._list(partition, False):
+                    run_id, _, name = key[len(partition) :].partition("/")
+                    if name != "manifest.json" or not run_id < before:
+                        continue
+                    raw = self._s3.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+                    doc = chain_candidate(raw, run_id)
+                    if doc is not None:
+                        return doc
+        except (ClientError, BotoCoreError) as exc:
+            raise SinkError(
+                f"could not read the latest run manifest from {self.name} ({exc}); the role "
+                "needs s3:ListBucket and s3:GetObject on this prefix"
+            ) from exc
+        return None

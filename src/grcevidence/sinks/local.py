@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from grcevidence.models import RunResult
-from grcevidence.sinks.base import SinkError
+from grcevidence.sinks.base import SinkError, chain_candidate
 
 
 class LocalSink:
@@ -30,3 +31,24 @@ class LocalSink:
         except OSError as exc:
             raise SinkError(f"local write failed: {exc}") from exc
         return len(run.evidence) + 1
+
+    def latest_manifest(self, before: str) -> dict[str, Any] | None:
+        """Newest well-formed run manifest whose run id sorts before ``before``, else None."""
+        try:
+            if not self.root.exists():
+                return None
+            runs = sorted(
+                (p for p in self.root.iterdir() if p.name < before),
+                key=lambda p: p.name,
+                reverse=True,
+            )
+            for run_dir in runs:
+                if (run_dir / "manifest.json").is_file():
+                    doc = chain_candidate((run_dir / "manifest.json").read_bytes(), run_dir.name)
+                    if doc is not None:
+                        return doc
+        except OSError as exc:
+            raise SinkError(
+                f"could not read the latest run manifest under {self.root}: {exc}"
+            ) from exc
+        return None

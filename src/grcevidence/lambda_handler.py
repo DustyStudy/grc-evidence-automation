@@ -48,13 +48,15 @@ def handler(event: dict[str, Any] | None, context: Any = None) -> dict[str, Any]
             "no sinks configured; refusing to collect evidence that would be discarded"
         )
 
-    result = deliver(run(config, session=session), sinks)
+    result = deliver(run(config, session=session, sinks=sinks), sinks)
     summary = {
         "run_id": result.manifest.run_id,
         "accounts": result.manifest.accounts,
         "counts": result.manifest.counts,
         "sinks": result.sink_results,
         "dry_run": bool(event.get("dry_run")),
+        "signed": bool(result.manifest.signature),
+        "previous_run_id": (result.manifest.previous or {}).get("run_id"),
     }
     log.info(json.dumps(summary))
     if result.failed_sinks:

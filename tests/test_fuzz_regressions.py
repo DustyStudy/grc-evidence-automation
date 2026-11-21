@@ -53,7 +53,7 @@ def _run(tmp_path, evidence=None):
 
 
 def test_an_untouched_run_verifies(tmp_path):
-    assert verify_run(_run(tmp_path)) == []
+    assert verify_run(_run(tmp_path)).problems == []
 
 
 @pytest.mark.parametrize(
@@ -63,7 +63,7 @@ def test_a_damaged_evidence_file_is_reported_not_a_crash(tmp_path, junk):
     run = _run(tmp_path)
     victim = next(p for p in run.glob("*.json") if p.name != "manifest.json")
     victim.write_bytes(junk)
-    problems = verify_run(run)
+    problems = verify_run(run).problems
     assert problems and any(victim.name in p for p in problems)
 
 
@@ -73,14 +73,14 @@ def test_a_manifest_entry_missing_a_key_is_reported(tmp_path, key):
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
     del manifest["evidence"][0][key]
     (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    assert verify_run(run)
+    assert verify_run(run).problems
 
 
 @pytest.mark.parametrize("text", ["[]", "null", "{", "{}", '{"run_id": 1}', "42"])
 def test_a_damaged_manifest_is_reported(tmp_path, text):
     run = _run(tmp_path)
     (run / "manifest.json").write_text(text, encoding="utf-8")
-    problems = verify_run(run)
+    problems = verify_run(run).problems
     assert problems and "manifest.json" in problems[0]
 
 
@@ -89,7 +89,7 @@ def test_a_manifest_entry_that_is_not_an_object_is_reported(tmp_path):
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
     manifest["evidence"] = ["oops", 5, None]
     (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    assert verify_run(run)
+    assert verify_run(run).problems
 
 
 def test_loading_a_damaged_run_raises_value_error(tmp_path):

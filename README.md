@@ -19,7 +19,7 @@ flowchart LR
   L -->|AssumeRole + ExternalId| M2[Member acct: read-only role]
   L --> C[13 AWS + 2 GCP collectors]
   C --> E[Evidence records<br/>controls + findings + sha256]
-  E --> S3[(S3 evidence bucket<br/>SSE-KMS, versioned, Object Lock optional)]
+  E --> S3[(S3 evidence bucket<br/>SSE-KMS, versioned, Object Lock optional<br/>KMS-signed, hash-chained manifests)]
   E --> H[HTTP ingestion API<br/>bearer / OAuth2]
   L -. errors .-> A[CloudWatch alarm]
 ```
@@ -33,7 +33,8 @@ Built for the "evidence, not screenshots" problem: a crosswalk in the spirit of 
 | **15 collectors** | IAM (MFA, password policy, access-key hygiene, admin principals), S3 exposure and encryption, CloudTrail, KMS rotation, EBS/RDS encryption, security-group exposure, GuardDuty/Security Hub, AWS Config, VPC flow logs, backups; GCP Cloud Storage and firewall exposure. [Reference](docs/collectors.md) |
 | **Control crosswalk** | Every collector maps to SOC 2 criteria, ISO 27001:2022 Annex A, NIST 800-53 controls and FedRAMP 20x KSIs, kept in [`collector_map.yaml`](src/grcevidence/data/collector_map.yaml) and validated in CI. |
 | **Honest coverage report** | Shows which controls have automated evidence, and which technical controls are gaps. Organizational controls (policies, board oversight, HR) are marked as outside what any collector can prove. [SOC 2 / ISO / NIST coverage](docs/coverage.md) |
-| **Integrity** | Every record and every run manifest carries a SHA-256. `grc-evidence verify` detects edited, missing and extra files. |
+| **Integrity** | Every record carries a SHA-256, and the run manifest that lists them is signed with an asymmetric KMS key and hash-chained to the previous run. `grc-evidence verify` detects edited, missing and extra files, invalid signatures, and deleted, reordered or rewritten past runs. Paired with S3 Object Lock in `COMPLIANCE` mode, written evidence can't be changed or deleted at all. [What each layer does and doesn't stop](docs/ARCHITECTURE.md#integrity-and-threat-model). |
+| **Judged against what** | Each manifest records the thresholds (`parameters`), the collectors that ran, the tool version and a hash of the effective config, so a `pass` can be tied to the bar it was judged against. |
 | **Failures are visible** | A check that cannot run (denied, throttled, service error) becomes an `error` record, never a silent pass. A failed delivery raises, so the Lambda alarm fires instead of leaving a quiet gap. |
 | **Multi-account** | Assumes a read-only role in each member account with an `ExternalId`. Terraform for the collector and for the member-account role. GovCloud/China ARN partitions are handled. |
 | **Sinks** | Local files, S3 (SSE-KMS), and a generic HTTP ingestion sink (bearer or OAuth2 client-credentials, retries, idempotency keys, no redirect following). |
@@ -100,6 +101,23 @@ sinks:
 
 Unknown keys are errors. Secrets are references (`env:`, `secretsmanager:`, `ssm:`), and bare literals are rejected so credentials cannot end up in the config file.
 
+### Integrity: signing, chain and verify
+
+```yaml
+signing:
+  kms_key_id: arn:aws:kms:us-east-1:111111111111:key/...   # asymmetric ECC_NIST_P256, SIGN_VERIFY
+```
+
+With `signing` set, each run's manifest SHA-256 is signed with `kms:Sign` (`ECDSA_SHA_256`), and the run fails rather than deliver an unsigned manifest. Every run also records the `run_id` and hash of the run before it, read from the first `s3` or `local` sink before sealing. If that read fails, the run fails, so a chain break can't hide behind a false "first run". The collector needs `s3:ListBucket` on the evidence prefix, `s3:GetObject` on its `manifest.json` objects, and `kms:Sign` on the key. The Terraform module grants exactly that.
+
+```bash
+grc-evidence verify ./evidence                     # every run under the directory, and the chain between them
+grc-evidence verify ./evidence/<run_id>            # one run: hashes and signature
+grc-evidence verify s3://my-evidence-bucket/evidence --key-id <signing_key_arn>
+```
+
+`--key-id` pins the key that must have signed every run. An unsigned run fails, a run signed with any other key fails, and a store with no signed run fails. Without it, `verify` checks each signature against the key named in the manifest, says the key wasn't pinned, and counts unsigned runs. That checks consistency but doesn't prove where the runs came from, so auditors should always pin. `--skip-signature` checks hashes and the chain only, for when you have no KMS access. Manifests written before schema 2.0 are reported as legacy and don't fail. Read [the threat model](docs/ARCHITECTURE.md#integrity-and-threat-model) before relying on this: a hash alone stops nothing deliberate, and the collector's own role can sign.
+
 ### FIPS endpoints
 
 `use_fips_endpoint` (default `true`) makes every AWS client call FIPS 140 validated endpoints: collectors, STS role assumption, the S3 sink, and `secretsmanager:`/`ssm:` secret lookups. All the services involved have FIPS endpoints in the US commercial regions and GovCloud, which is where FedRAMP boundaries live. Configure only US regions in `regions`.
@@ -117,7 +135,10 @@ module "grc_evidence" {
   source           = "./deploy/terraform"
   lambda_zip_path  = "dist/grc-evidence-lambda.zip"
   schedule_expression = "cron(0 6 * * ? *)"
-  object_lock_days = 365                            # optional immutability for the evidence bucket
+  object_lock_days = 365                            # immutability; must be set when the bucket is created
+  object_lock_mode = "COMPLIANCE"                   # no one, including root, can shorten or remove it
+  evidence_expiration_days = 730                    # must not be shorter than object_lock_days
+  # enable_signing defaults to true: an ECC_NIST_P256 KMS key signs every run manifest
   target_role_arns = [module.reader_prod.role_arn]
   alarm_actions    = [aws_sns_topic.security.arn]
   collector_config = {
