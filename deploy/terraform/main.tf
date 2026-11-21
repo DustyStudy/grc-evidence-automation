@@ -15,10 +15,15 @@ locals {
     kms_key_id = aws_kms_key.evidence.arn
   }
 
-  grc_config = merge(var.collector_config, {
-    use_fips_endpoint = var.use_fips_endpoint
-    sinks             = concat([local.s3_sink], var.extra_sinks)
-  })
+  grc_config = merge(
+    var.collector_config,
+    {
+      use_fips_endpoint = var.use_fips_endpoint
+      sinks             = concat([local.s3_sink], var.extra_sinks)
+    },
+    # Omit the key entirely when signing is off: the app rejects a null signing block.
+    var.enable_signing ? { signing = { kms_key_id = one(aws_kms_key.signing[*].arn) } } : {},
+  )
 }
 
 # --------------------------------------------------------------------------- KMS
@@ -151,6 +156,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "evidence" {
   }
 
   depends_on = [aws_s3_bucket_versioning.evidence]
+
+  lifecycle {
+    precondition {
+      condition     = var.object_lock_days == 0 || var.evidence_expiration_days >= var.object_lock_days
+      error_message = "evidence_expiration_days is shorter than object_lock_days: lifecycle rules cannot remove locked object versions, so the configured expiry would be a false promise. Raise evidence_expiration_days or lower object_lock_days."
+    }
+  }
 }
 
 data "aws_iam_policy_document" "bucket" {

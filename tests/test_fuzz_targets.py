@@ -15,6 +15,7 @@ import pytest
 
 from fuzz import targets
 from fuzz.targets import TARGETS, Reader
+from grcevidence.report import VerifyResult
 
 CORPUS = Path(__file__).resolve().parents[1] / "fuzz" / "corpus"
 RANDOM_INPUTS = 250
@@ -68,7 +69,7 @@ def test_record_target_detects_a_hash_that_ignores_content(monkeypatch):
 
 
 def test_verify_target_detects_a_verifier_that_misses_tampering(monkeypatch):
-    monkeypatch.setattr(targets, "verify_run", lambda path: [])
+    monkeypatch.setattr(targets, "verify_run", lambda path, **kw: VerifyResult())
     _fails_within("verify")
 
 

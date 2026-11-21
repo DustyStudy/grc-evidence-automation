@@ -58,6 +58,16 @@ variable "extra_sinks" {
   default     = []
 }
 
+variable "enable_signing" {
+  description = <<-EOT
+    Create an asymmetric KMS key (ECC_NIST_P256) and sign each run manifest with it
+    (kms:Sign, ECDSA_SHA_256 over the digest). Asymmetric keys cannot be rotated
+    automatically; rotate by creating a new key and keeping the old one to verify older runs.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "target_role_arns" {
   description = "Roles in member accounts (see ./reader_role) that the function may assume."
   type        = list(string)

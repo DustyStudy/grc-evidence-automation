@@ -5,6 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
+from pathlib import Path
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 from grcevidence import __version__
 from grcevidence.catalog import (
@@ -17,6 +21,7 @@ from grcevidence.catalog import (
 from grcevidence.collectors.base import load_all
 from grcevidence.report import load_run, report_markdown, rollup, verify_run
 from grcevidence.runner import Config, ConfigError, aws_session, build_sinks, deliver, run
+from grcevidence.sinks import SinkError
 
 
 def cmd_collectors(args: argparse.Namespace) -> int:
@@ -82,8 +87,8 @@ def cmd_collect(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        result = deliver(run(config, session=session), sinks)
-    except (ConfigError, ValueError, OSError) as exc:
+        result = deliver(run(config, session=session, sinks=sinks), sinks)
+    except (ConfigError, ValueError, OSError, SinkError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     counts = ", ".join(f"{k}={v}" for k, v in sorted(result.manifest.counts.items()))
@@ -119,20 +124,63 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _download_s3(url: str, dest: Path) -> None:
+    """Copy every object under s3://bucket/prefix to the same relative path under ``dest``."""
+    bucket, _, prefix = url.removeprefix("s3://").partition("/")
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+    s3 = aws_session().client("s3")
+    root = dest.resolve()
+    seen: set[str] = set()
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith("/"):
+                continue  # folder marker
+            parts = key.split("/")
+            target = dest.joinpath(*parts)
+            # Keys are untrusted: none may land outside the temporary directory or overwrite
+            # another key's file (case-insensitive filesystems, empty or "." segments).
+            if (
+                any(p in {"", ".", ".."} for p in parts)
+                or root not in target.resolve().parents
+                or str(target).casefold() in seen
+            ):
+                raise ValueError(f"refusing unsafe or colliding S3 key {key!r}")
+            seen.add(str(target).casefold())
+            target.parent.mkdir(parents=True, exist_ok=True)
+            s3.download_file(bucket, key, str(target))
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
+    opts = {"key_id": args.key_id, "check_signature": not args.skip_signature}
     try:
-        problems = verify_run(args.input)
-    except (OSError, KeyError, json.JSONDecodeError) as exc:
+        if args.input.startswith("s3://"):
+            with tempfile.TemporaryDirectory(prefix="grc-verify-") as tmp:
+                _download_s3(args.input, Path(tmp))
+                result = verify_run(tmp, **opts)
+            result.notes.append("S3: checked the current version of each object only")
+        else:
+            result = verify_run(args.input, **opts)
+    except (OSError, KeyError, ValueError, ClientError, BotoCoreError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    for p in problems:
+    for p in result.problems:
         print(f"TAMPERED/INCONSISTENT: {p}", file=sys.stderr)
-    print(
-        "OK: manifest and all evidence hashes verified"
-        if not problems
-        else f"{len(problems)} problem(s)"
-    )
-    return 1 if problems else 0
+    for n in result.notes:
+        print(f"NOTE: {n}")
+    if result.problems:
+        print(f"{len(result.problems)} problem(s)")
+        return 1
+    checked = ["manifest and evidence hashes"]
+    if result.signatures:
+        checked.append(f"{result.signatures} signature(s)")
+    if result.unsigned:
+        checked.append(f"{result.unsigned} unsigned")
+    if result.chain_checked:
+        checked.append("chain links")
+    print(f"OK: {result.runs} run(s) verified ({', '.join(checked)})")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -179,8 +227,18 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--format", choices=["markdown", "json"], default="markdown")
     r.set_defaults(func=cmd_report)
 
-    v = sub.add_parser("verify", help="Verify integrity of a stored run (hashes and manifest).")
-    v.add_argument("input")
+    v = sub.add_parser(
+        "verify", help="Verify stored runs: hashes, manifest signatures and the chain of runs."
+    )
+    v.add_argument(
+        "input", help="run directory, parent of run directories, or s3://bucket/prefix (all runs)"
+    )
+    v.add_argument(
+        "--key-id", help="pin the KMS key (ARN) runs must be signed with; unsigned runs then fail"
+    )
+    v.add_argument(
+        "--skip-signature", action="store_true", help="do not call KMS to check signatures"
+    )
     v.set_defaults(func=cmd_verify)
     return p
 
