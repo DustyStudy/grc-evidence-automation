@@ -35,6 +35,20 @@ def test_both_modules_share_one_action_list():
     assert _actions(TF / "iam.tf") == _actions(TF / "reader_role" / "main.tf")
 
 
+@pytest.mark.parametrize("tf_file", [TF / "iam.tf", TF / "reader_role" / "main.tf"])
+def test_api_key_values_are_denied(tf_file):
+    # apigateway:GET on "*" is needed for API/stage reads but would also return API key values.
+    text = tf_file.read_text(encoding="utf-8")
+    deny = re.search(r'sid\s*=\s*"DenyApiKeyValues"(.*?)\n  \}', text, re.DOTALL)
+    assert deny, f"{tf_file.name} has no DenyApiKeyValues statement"
+    body = deny.group(1)
+    assert re.search(r'effect\s*=\s*"Deny"', body)
+    assert re.search(r'actions\s*=\s*\["apigateway:GET"\]', body)
+    partition = r"arn:\$\{data\.aws_partition\.current\.partition\}:apigateway:\*::"
+    for path in ("/apikeys", "/apikeys/*", "/usageplans/*/keys", "/usageplans/*/keys/*"):
+        assert re.search(rf'"{partition}{re.escape(path)}"', body), path
+
+
 def test_no_write_actions_granted_for_collection():
     write_verbs = (
         "Put",
