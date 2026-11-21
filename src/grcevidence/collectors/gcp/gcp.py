@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from grcevidence.collectors.base import Collector, Context, Result, register
+from grcevidence.collectors.base import Collector, Context, Result, register, resource
 from grcevidence.models import Finding, Severity
 
 
@@ -49,9 +49,12 @@ class GcsBuckets(Collector):
         all_buckets = list(_clients(ctx).storage().list_buckets())
         buckets = all_buckets[:cap]
         findings: list[Finding] = []
+        resources: list[dict[str, Any]] = []
         for b in buckets:
             iam = b.iam_configuration
-            if not iam.uniform_bucket_level_access_enabled:
+            ubla = bool(iam.uniform_bucket_level_access_enabled)
+            pap = str(iam.public_access_prevention or "").lower() == "enforced"
+            if not ubla:
                 findings.append(
                     Finding(
                         b.name,
@@ -59,14 +62,23 @@ class GcsBuckets(Collector):
                         Severity.MEDIUM,
                     )
                 )
-            if str(iam.public_access_prevention or "").lower() != "enforced":
+            if not pap:
                 findings.append(
                     Finding(b.name, "Public access prevention is not enforced", Severity.HIGH)
                 )
+            resources.append(
+                resource(
+                    b.name,
+                    "storage.googleapis.com/Bucket",
+                    ubla and pap,
+                    uniform_bucket_level_access=ubla,
+                    public_access_prevention_enforced=pap,
+                )
+            )
         return Result(
             summary=f"{len(buckets)} bucket(s) examined; {len(findings)} finding(s)",
             findings=findings,
-            data={"buckets_examined": len(buckets)},
+            data={"buckets_examined": len(buckets), "resources": resources},
             truncated_at=cap if len(all_buckets) > cap else None,
         )
 
@@ -80,27 +92,31 @@ class GcpFirewallExposure(Collector):
     permissions = ("compute.firewalls.list",)
 
     def collect(self, ctx: Context) -> Result:
-        rules = list(_clients(ctx).firewalls().list(project=ctx.gcp_project))
+        cap = ctx.params.max_items_per_check
+        all_rules = list(_clients(ctx).firewalls().list(project=ctx.gcp_project))
+        rules = all_rules[:cap]
         sensitive = {str(p) for p in ctx.params.sensitive_ports}
         findings: list[Finding] = []
+        resources: list[dict[str, Any]] = []
         for fw in rules:
-            if (
-                getattr(fw, "disabled", False)
-                or str(getattr(fw, "direction", "INGRESS")).upper() != "INGRESS"
-            ):
-                continue
-            if "0.0.0.0/0" not in list(getattr(fw, "source_ranges", [])):
-                continue
-            for allowed in getattr(fw, "allowed", []):
+            open_to_internet = (
+                not getattr(fw, "disabled", False)
+                and str(getattr(fw, "direction", "INGRESS")).upper() == "INGRESS"
+                and "0.0.0.0/0" in list(getattr(fw, "source_ranges", []))
+            )
+            all_protocols = sensitive_tcp = False
+            for allowed in getattr(fw, "allowed", []) if open_to_internet else []:
                 proto = str(
                     getattr(allowed, "I_p_protocol", None) or getattr(allowed, "ip_protocol", "")
                 ).lower()
                 ports = [str(p) for p in getattr(allowed, "ports", [])]
                 if proto == "all":
+                    all_protocols = True
                     findings.append(
                         Finding(fw.name, "Allows ALL protocols from 0.0.0.0/0", Severity.CRITICAL)
                     )
                 elif proto == "tcp" and (not ports or any(_port_hits(p, sensitive) for p in ports)):
+                    sensitive_tcp = True
                     findings.append(
                         Finding(
                             fw.name,
@@ -108,10 +124,25 @@ class GcpFirewallExposure(Collector):
                             Severity.HIGH,
                         )
                     )
+            resources.append(
+                resource(
+                    fw.name,
+                    "compute.googleapis.com/Firewall",
+                    not (all_protocols or sensitive_tcp),
+                    open_to_internet=open_to_internet,
+                    all_protocols=all_protocols,
+                    sensitive_tcp_open=sensitive_tcp,
+                )
+            )
         return Result(
             summary=f"{len(rules)} firewall rule(s) examined; {len(findings)} finding(s)",
             findings=findings,
-            data={"firewall_rules": len(rules), "sensitive_ports": sorted(sensitive)},
+            data={
+                "firewall_rules": len(rules),
+                "sensitive_ports": sorted(sensitive),
+                "resources": resources,
+            },
+            truncated_at=cap if len(all_rules) > cap else None,
         )
 
 
