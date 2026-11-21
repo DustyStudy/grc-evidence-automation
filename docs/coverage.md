@@ -28,9 +28,9 @@ cloud API can supply.
 | CC5.1 | Selects and develops control activities | organizational | - |
 | CC5.2 | General controls over technology | technical (gap) | - |
 | CC5.3 | Deploys controls through policies and procedures | organizational | - |
-| CC6.1 | Logical access security software, infrastructure and architectures | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys`, `aws.iam_privileged_access`, `aws.s3_security`, `aws.kms_rotation`, `aws.encryption_at_rest`, `gcp.storage_buckets` |
-| CC6.2 | User registration, authorization and credential issuance | technical | `aws.iam_access_keys` |
-| CC6.3 | Role-based access, least privilege and access removal | technical | `aws.iam_privileged_access` |
+| CC6.1 | Logical access security software, infrastructure and architectures | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys`, `aws.iam_privileged_access`, `aws.identity_center`, `aws.s3_security`, `aws.kms_rotation`, `aws.encryption_at_rest`, `gcp.storage_buckets` |
+| CC6.2 | User registration, authorization and credential issuance | technical | `aws.iam_access_keys`, `aws.identity_center` |
+| CC6.3 | Role-based access, least privilege and access removal | technical | `aws.iam_privileged_access`, `aws.identity_center` |
 | CC6.4 | Physical access restrictions | organizational | - |
 | CC6.5 | Disposal of logical and physical assets | organizational | - |
 | CC6.6 | Protection against threats from outside system boundaries | technical | `aws.iam_mfa`, `aws.network_exposure`, `gcp.firewall_exposure` |
@@ -59,11 +59,11 @@ cloud API can supply.
 | A.5.15 | Access control | technical | `aws.s3_security`, `gcp.storage_buckets` |
 | A.5.16 | Identity management | technical | `aws.iam_access_keys` |
 | A.5.17 | Authentication information | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys` |
-| A.5.18 | Access rights | technical | `aws.iam_privileged_access` |
+| A.5.18 | Access rights | technical | `aws.iam_privileged_access`, `aws.identity_center` |
 | A.5.23 | Information security for use of cloud services | organizational | - |
 | A.5.30 | ICT readiness for business continuity | technical | `aws.backups` |
 | A.8.1 | User endpoint devices | technical (gap) | - |
-| A.8.2 | Privileged access rights | technical | `aws.iam_privileged_access` |
+| A.8.2 | Privileged access rights | technical | `aws.iam_privileged_access`, `aws.identity_center` |
 | A.8.3 | Information access restriction | technical | `aws.s3_security`, `gcp.storage_buckets` |
 | A.8.4 | Access to source code | technical (gap) | - |
 | A.8.5 | Secure authentication | technical | `aws.iam_mfa`, `aws.iam_password_policy` |
@@ -91,9 +91,9 @@ cloud API can supply.
 
 | Control | Title | Type | Automated evidence from |
 |---|---|---|---|
-| AC-2 | Account management | technical | `aws.iam_access_keys`, `aws.iam_privileged_access` |
+| AC-2 | Account management | technical | `aws.iam_access_keys`, `aws.iam_privileged_access`, `aws.identity_center` |
 | AC-3 | Access enforcement | technical | `aws.s3_security`, `gcp.storage_buckets` |
-| AC-6 | Least privilege | technical | `aws.iam_privileged_access` |
+| AC-6 | Least privilege | technical | `aws.iam_privileged_access`, `aws.identity_center` |
 | AU-2 | Event logging | technical | `aws.cloudtrail` |
 | AU-9 | Protection of audit information | technical | `aws.cloudtrail` |
 | AU-12 | Audit record generation | technical | `aws.cloudtrail`, `aws.vpc_flow_logs` |
@@ -130,10 +130,10 @@ KSIs are outcome statements, not controls. Which ones a provider must meet depen
 | KSI-CNA-RNT | Restricting Network Traffic | technical | `aws.network_exposure`, `aws.vpc_flow_logs`, `gcp.firewall_exposure` |
 | KSI-CNA-RVP | Reviewing Protections | technical (gap) | - |
 | KSI-CNA-ULN | Using Logical Networking | technical | `aws.network_exposure`, `aws.vpc_flow_logs`, `gcp.firewall_exposure` |
-| KSI-IAM-AAM | Automating Account Management | technical | `aws.iam_access_keys`, `aws.iam_privileged_access` |
+| KSI-IAM-AAM | Automating Account Management | technical | `aws.iam_access_keys`, `aws.iam_privileged_access`, `aws.identity_center` |
 | KSI-IAM-APM | Adopting Passwordless Methods | technical | `aws.iam_mfa`, `aws.iam_password_policy`, `aws.iam_access_keys` |
-| KSI-IAM-ELP | Ensuring Least Privilege | technical | `aws.iam_privileged_access`, `aws.s3_security`, `gcp.storage_buckets` |
-| KSI-IAM-JIT | Authorizing Just-in-Time | technical | `aws.iam_privileged_access` |
+| KSI-IAM-ELP | Ensuring Least Privilege | technical | `aws.iam_privileged_access`, `aws.identity_center`, `aws.s3_security`, `gcp.storage_buckets` |
+| KSI-IAM-JIT | Authorizing Just-in-Time | technical | `aws.iam_privileged_access`, `aws.identity_center` |
 | KSI-IAM-SNU | Securing Non-User Authentication | technical | `aws.iam_access_keys` |
 | KSI-IAM-SUS | Responding to Suspicious Activity | technical (gap) | - |
 | KSI-INR-AAR | Generating After Action Reports | organizational | - |

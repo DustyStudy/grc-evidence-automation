@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from grcevidence.collectors.base import Collector, Context, Result, paginate, register
+from grcevidence.collectors.base import Collector, Context, Result, paginate, register, resource
 from grcevidence.models import Finding, Severity, Status
 
 _MISSING = {
@@ -49,13 +49,22 @@ class S3Security(Collector):
             for region, reason in not_enumerated
         ]
         unversioned = 0
+        resources: list[dict[str, Any]] = []
         for name in buckets:
-            findings += self._check_bucket(s3, name)
+            bucket_findings, attrs = self._check_bucket(s3, name)
+            findings += bucket_findings
+            versioning: bool | None = None
             try:
-                if s3.get_bucket_versioning(Bucket=name).get("Status") != "Enabled":
+                versioning = s3.get_bucket_versioning(Bucket=name).get("Status") == "Enabled"
+                if not versioning:
                     unversioned += 1
             except ClientError:
                 pass
+            resources.append(
+                resource(
+                    name, "AWS::S3::Bucket", not bucket_findings, **attrs, versioning=versioning
+                )
+            )
         return Result(
             summary=f"{len(buckets)} bucket(s) examined; {len(findings)} finding(s)",
             findings=findings,
@@ -66,6 +75,7 @@ class S3Security(Collector):
                 "regions_not_enumerated": [r for r, _ in not_enumerated],
                 "regions_out_of_scope": out_of_scope,
                 "truncated": truncated,
+                "resources": resources,
             },
             truncated_at=limit if truncated else None,
         )
@@ -109,11 +119,15 @@ class S3Security(Collector):
         return sorted(names), "cloudcontrol", skipped, out_of_scope
 
     @staticmethod
-    def _check_bucket(s3: Any, name: str) -> list[Finding]:
+    def _check_bucket(s3: Any, name: str) -> tuple[list[Finding], dict[str, bool | None]]:
+        """Findings for one bucket and the judged settings (None where a setting was unreadable)."""
         out: list[Finding] = []
+        attrs: dict[str, bool | None] = dict.fromkeys(
+            ("public_access_block_complete", "default_encryption", "policy_public")
+        )
         try:
             cfg = s3.get_public_access_block(Bucket=name)["PublicAccessBlockConfiguration"]
-            if not all(
+            attrs["public_access_block_complete"] = all(
                 cfg.get(k)
                 for k in (
                     "BlockPublicAcls",
@@ -121,12 +135,14 @@ class S3Security(Collector):
                     "BlockPublicPolicy",
                     "RestrictPublicBuckets",
                 )
-            ):
+            )
+            if not attrs["public_access_block_complete"]:
                 out.append(
                     Finding(name, "Public access block is only partially enabled", Severity.HIGH)
                 )
         except ClientError as exc:
             if exc.response["Error"]["Code"] in _MISSING:
+                attrs["public_access_block_complete"] = False
                 out.append(Finding(name, "No public access block configured", Severity.HIGH))
             else:
                 out.append(
@@ -140,10 +156,12 @@ class S3Security(Collector):
             rules = s3.get_bucket_encryption(Bucket=name)["ServerSideEncryptionConfiguration"][
                 "Rules"
             ]
+            attrs["default_encryption"] = bool(rules)
             if not rules:
                 out.append(Finding(name, "No default encryption rule", Severity.MEDIUM))
         except ClientError as exc:
             if exc.response["Error"]["Code"] in _MISSING:
+                attrs["default_encryption"] = False
                 out.append(Finding(name, "No default encryption configured", Severity.MEDIUM))
             else:
                 out.append(
@@ -154,12 +172,16 @@ class S3Security(Collector):
                     )
                 )
         try:
-            if s3.get_bucket_policy_status(Bucket=name).get("PolicyStatus", {}).get("IsPublic"):
+            status = s3.get_bucket_policy_status(Bucket=name).get("PolicyStatus", {})
+            attrs["policy_public"] = bool(status.get("IsPublic"))
+            if attrs["policy_public"]:
                 out.append(
                     Finding(name, "Bucket policy makes the bucket public", Severity.CRITICAL)
                 )
         except ClientError as exc:
-            if exc.response["Error"]["Code"] not in _MISSING:
+            if exc.response["Error"]["Code"] in _MISSING:
+                attrs["policy_public"] = False  # no bucket policy at all
+            else:
                 out.append(
                     Finding(
                         name,
@@ -167,7 +189,7 @@ class S3Security(Collector):
                         Severity.LOW,
                     )
                 )
-        return out
+        return out, attrs
 
 
 @register
@@ -181,6 +203,7 @@ class KmsRotation(Collector):
         keys = paginate(kms, "list_keys", "Keys", ctx.params.max_items_per_check)
         key_ids = [k["KeyId"] for k in keys]
         findings: list[Finding] = []
+        resources: list[dict[str, Any]] = []
         examined = rotating = 0
         for key_id in key_ids:
             meta = kms.describe_key(KeyId=key_id)["KeyMetadata"]
@@ -192,7 +215,11 @@ class KmsRotation(Collector):
             ):
                 continue  # rotation applies only to enabled, symmetric, KMS-generated CMKs
             examined += 1
-            if kms.get_key_rotation_status(KeyId=key_id)["KeyRotationEnabled"]:
+            enabled = bool(kms.get_key_rotation_status(KeyId=key_id)["KeyRotationEnabled"])
+            resources.append(
+                resource(meta["Arn"], "AWS::KMS::Key", enabled, rotation_enabled=enabled)
+            )
+            if enabled:
                 rotating += 1
             else:
                 findings.append(
@@ -201,7 +228,7 @@ class KmsRotation(Collector):
         return Result(
             summary=f"{rotating}/{examined} rotatable customer-managed key(s) have rotation enabled",
             findings=findings,
-            data={"keys_examined": examined, "keys_rotating": rotating},
+            data={"keys_examined": examined, "keys_rotating": rotating, "resources": resources},
             status=Status.NOT_APPLICABLE if examined == 0 else None,
             truncated_at=ctx.params.max_items_per_check if keys.truncated else None,
         )
@@ -215,11 +242,12 @@ class EncryptionAtRest(Collector):
 
     def collect(self, ctx: Context) -> Result:
         ebs_default = ctx.client("ec2").get_ebs_encryption_by_default()["EbsEncryptionByDefault"]
+        cap = ctx.params.max_items_per_check
         instances = paginate(
             ctx.client("rds"),
             "describe_db_instances",
             "DBInstances",
-            ctx.params.max_items_per_check,
+            max(cap - 1, 0),  # the region's EBS setting takes one slot of the population
         )
         findings: list[Finding] = []
         if not ebs_default:
@@ -247,8 +275,25 @@ class EncryptionAtRest(Collector):
                 "ebs_encryption_by_default": ebs_default,
                 "rds_instances": len(instances),
                 "rds_unencrypted": len(unencrypted),
+                "resources": [
+                    resource(
+                        f"ec2:{ctx.region}",
+                        "AWS::EC2::EBSEncryptionByDefault",
+                        bool(ebs_default),
+                        encryption_by_default=bool(ebs_default),
+                    ),
+                    *(
+                        resource(
+                            i["DBInstanceIdentifier"],
+                            "AWS::RDS::DBInstance",
+                            bool(i.get("StorageEncrypted")),
+                            storage_encrypted=bool(i.get("StorageEncrypted")),
+                        )
+                        for i in instances
+                    ),
+                ],
             },
-            truncated_at=ctx.params.max_items_per_check if instances.truncated else None,
+            truncated_at=cap if instances.truncated else None,
         )
 
 
@@ -259,13 +304,12 @@ class Backups(Collector):
     permissions = ("rds:DescribeDBInstances", "backup:ListBackupPlans")
 
     def collect(self, ctx: Context) -> Result:
-        instances = paginate(
-            ctx.client("rds"),
-            "describe_db_instances",
-            "DBInstances",
-            ctx.params.max_items_per_check,
+        cap = ctx.params.max_items_per_check
+        instances = paginate(ctx.client("rds"), "describe_db_instances", "DBInstances", cap)
+        # Plans share the capped population with the instances.
+        plans = paginate(
+            ctx.client("backup"), "list_backup_plans", "BackupPlansList", cap - len(instances)
         )
-        plans = ctx.client("backup").list_backup_plans().get("BackupPlansList", [])
         minimum = ctx.params.min_backup_retention_days
         findings = [
             Finding(
@@ -280,6 +324,18 @@ class Backups(Collector):
             "rds_instances": len(instances),
             "backup_plans": len(plans),
             "min_retention_days": minimum,
+            "resources": [
+                *(
+                    resource(
+                        i["DBInstanceIdentifier"],
+                        "AWS::RDS::DBInstance",
+                        int(i.get("BackupRetentionPeriod", 0)) >= minimum,
+                        backup_retention_days=int(i.get("BackupRetentionPeriod", 0)),
+                    )
+                    for i in instances
+                ),
+                *(resource(p["BackupPlanArn"], "AWS::Backup::BackupPlan", True) for p in plans),
+            ],
         }
         if not instances and not plans:
             return Result(
@@ -291,5 +347,5 @@ class Backups(Collector):
             summary=f"{len(instances)} RDS instance(s), {len(plans)} AWS Backup plan(s); {len(findings)} finding(s)",
             findings=findings,
             data=data,
-            truncated_at=ctx.params.max_items_per_check if instances.truncated else None,
+            truncated_at=cap if instances.truncated or plans.truncated else None,
         )

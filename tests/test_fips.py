@@ -183,6 +183,7 @@ def test_collector_end_to_end_with_cloud_control_listing(make_ctx, session, monk
     ev = S3Security().execute(ctx)
     assert ev.data["bucket_enumeration"] == "cloudcontrol"
     assert ev.data["buckets_examined"] == 2
+    assert [r["id"] for r in ev.data["resources"]] == ["alpha", "beta"]
     assert ev.data["regions_not_enumerated"] == ["us-west-1"]
     assert ev.data["regions_out_of_scope"] == ["eu-west-1"]
     # An unreachable US region is a finding; a non-US region is recorded but never a finding.
