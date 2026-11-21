@@ -28,6 +28,8 @@ parameters:          # thresholds: set these to what YOUR policy says
   sensitive_ports: [22, 3389]
   min_backup_retention_days: 7
   require_securityhub: false
+  min_certificate_days_remaining: 30  # ACM certificates expiring sooner than this fail
+  max_secret_rotation_days: 90        # Secrets Manager secrets must rotate at least this often
 
 gcp:
   projects: []       # e.g. [my-project]; needs `pip install "grc-evidence-automation[gcp]"`

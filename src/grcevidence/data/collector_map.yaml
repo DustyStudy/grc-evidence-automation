@@ -41,6 +41,16 @@ aws.kms_rotation:
   iso27001: [A.8.24]
   nist_800_53: [SC-12, SC-13]
   fedramp_20x: [KSI-SVC-ASM, KSI-SVC-SIN]
+aws.acm_certificates:
+  soc2: [CC6.1, CC6.7]
+  iso27001: [A.8.24]
+  nist_800_53: [SC-8, SC-12, SC-17]
+  fedramp_20x: [KSI-SVC-ASM, KSI-SVC-SIN]
+aws.secrets_rotation:
+  soc2: [CC6.1]
+  iso27001: [A.5.17]
+  nist_800_53: [IA-5, SC-12]
+  fedramp_20x: [KSI-IAM-SNU, KSI-SVC-ASM]
 aws.encryption_at_rest:
   soc2: [CC6.1, C1.1]
   iso27001: [A.8.24]
@@ -51,21 +61,51 @@ aws.network_exposure:
   iso27001: [A.8.20, A.8.22]
   nist_800_53: [SC-7]
   fedramp_20x: [KSI-CNA-MAT, KSI-CNA-RNT, KSI-CNA-ULN]
+aws.waf_coverage:
+  soc2: [CC6.6]
+  iso27001: [A.8.20]
+  nist_800_53: [SC-5, SC-7]
+  fedramp_20x: [KSI-CNA-MAT, KSI-CNA-RNT, KSI-CNA-RVP]
+aws.waf_cloudfront:
+  soc2: [CC6.6]
+  iso27001: [A.8.20]
+  nist_800_53: [SC-5, SC-7]
+  fedramp_20x: [KSI-CNA-MAT, KSI-CNA-RNT, KSI-CNA-RVP]
 aws.threat_detection:
   soc2: [CC7.2, CC7.3]
   iso27001: [A.8.16]
   nist_800_53: [SI-4]
   fedramp_20x: [KSI-MLA-RVL]
+aws.securityhub_controls:
+  soc2: [CC7.1]
+  iso27001: [A.8.8, A.8.9]
+  nist_800_53: [CA-7, CM-6, RA-5]
+  fedramp_20x: [KSI-MLA-EVC, KSI-SVC-ACM]
+aws.vulnerability_scanning:
+  soc2: [CC6.8, CC7.1]
+  iso27001: [A.8.7, A.8.8]
+  nist_800_53: [RA-5, SI-2]
+  fedramp_20x: [KSI-CMT-VTD, KSI-SCR-MON]
 aws.config_recorder:
   soc2: [CC7.1, CC8.1]
   iso27001: [A.8.9]
   nist_800_53: [CM-2, CM-6]
   fedramp_20x: [KSI-CMT-LMC, KSI-MLA-EVC, KSI-PIY-GIV, KSI-SVC-ACM]
+aws.config_rules:
+  soc2: [CC7.1, CC8.1]
+  iso27001: [A.8.9]
+  nist_800_53: [CA-7, CM-2, CM-6]
+  fedramp_20x: [KSI-MLA-EVC, KSI-SVC-ACM]
 aws.vpc_flow_logs:
   soc2: [CC7.2]
   iso27001: [A.8.15, A.8.16]
   nist_800_53: [AU-12, SC-7]
   fedramp_20x: [KSI-CNA-RNT, KSI-CNA-ULN, KSI-MLA-LET]
+aws.eks_security:
+  soc2: [CC6.1, CC6.6, CC7.2]
+  iso27001: [A.8.15, A.8.20, A.8.24]
+  nist_800_53: [AU-2, AU-12, SC-7, SC-28]
+  fedramp_20x: [KSI-CNA-MAT, KSI-CNA-RNT, KSI-MLA-LET, KSI-SVC-SIN]
 aws.backups:
   soc2: [A1.2, A1.3]
   iso27001: [A.5.30, A.8.13]
