@@ -1,4 +1,5 @@
-"""IAM policy-document analysis shared by the privileged-access collectors."""
+"""IAM policy-document analysis shared by the privileged-access collectors: administrator-
+equivalent grants, iam:PassRole on every role, and role trust policies."""
 
 from __future__ import annotations
 
@@ -8,9 +9,12 @@ from fnmatch import fnmatchcase
 from typing import Any
 from urllib.parse import unquote
 
+from grcevidence.models import Severity
+
 # IAM actions that let a principal grant itself anything when allowed on every IAM resource.
 # A policy action (which may be a wildcard: "*", "iam:*", "iam:Attach*", "iam:Put*Policy") is
-# admin-equivalent when it matches any of them. iam:PassRole is deliberately not listed.
+# admin-equivalent when it matches any of them. iam:PassRole is deliberately not listed: it is
+# a separate escalation path, reported by pass_role_statements.
 ADMIN_ACTIONS = frozenset(
     {
         "iam:attachuserpolicy",
@@ -95,6 +99,34 @@ def _all_iam_resources(value: Any) -> bool:
     )
 
 
+def _all_roles(value: Any) -> bool:
+    """Every IAM role of an account: all IAM resources, or ``arn:<partition>:iam::<any>:role/*``
+    (also ``role*``, ``r*``: any pattern ending in a wildcard that matches the ``role/`` prefix)."""
+    parts = _arn_parts(value)
+    return _all_iam_resources(value) or (
+        len(parts) == 6
+        and fnmatchcase("arn", parts[0].lower())
+        and (parts[2].lower() == "iam" or _star(parts[2]))
+        and (parts[3] == "" or _star(parts[3]))
+        and parts[5].endswith("*")
+        and fnmatchcase("role/", parts[5])
+    )
+
+
+def _allow_statements(document: Any) -> list[dict[str, Any]]:
+    """The Allow statements of ``document``. Malformed statements raise ``ValueError``."""
+    doc = parse_document(document)
+    if "Statement" not in doc:
+        raise ValueError("policy document has no Statement")
+    out = []
+    for stmt in _as_list(doc["Statement"]):
+        if not isinstance(stmt, dict) or "Effect" not in stmt:
+            raise ValueError("policy statement is not an object with an Effect")
+        if stmt["Effect"] == "Allow":
+            out.append(stmt)
+    return out
+
+
 def _granted(patterns: set[str]) -> set[str]:
     """The admin actions matched by any of the (lower-cased) policy action patterns."""
     return {a for a in ADMIN_ACTIONS if any(fnmatchcase(a, p) for p in patterns)}
@@ -112,15 +144,8 @@ def admin_statements(document: Any) -> list[dict[str, Any]]:
     Conditions do not disqualify a statement; callers record them. Deny statements are not
     subtracted. Malformed statements raise ``ValueError`` rather than reading as "not admin".
     """
-    doc = parse_document(document)
-    if "Statement" not in doc:
-        raise ValueError("policy document has no Statement")
     out = []
-    for stmt in _as_list(doc["Statement"]):
-        if not isinstance(stmt, dict) or "Effect" not in stmt:
-            raise ValueError("policy statement is not an object with an Effect")
-        if stmt["Effect"] != "Allow":
-            continue
+    for stmt in _allow_statements(document):
         resources = _as_list(stmt.get("Resource", []))
         every = "NotResource" in stmt or any(map(_all_resources, resources))
         every_iam = every or any(map(_all_iam_resources, resources))
@@ -138,3 +163,67 @@ def admin_statements(document: Any) -> list[dict[str, Any]]:
 def conditional(statements: list[dict[str, Any]]) -> bool:
     """True when every admin-granting statement carries a Condition."""
     return bool(statements) and all("Condition" in s for s in statements)
+
+
+def pass_role_statements(document: Any) -> list[dict[str, Any]]:
+    """The Allow statements granting ``iam:PassRole`` on every role (``"*"``, a wildcard ARN
+    matching all roles, or a ``NotResource`` that does not exclude all roles): the holder can
+    hand any role to a service and run code as it. Conditions do not disqualify a statement
+    and Deny statements are not subtracted, as in :func:`admin_statements`."""
+    out = []
+    for stmt in _allow_statements(document):
+        if "NotResource" in stmt:
+            every_role = not any(map(_all_roles, _as_list(stmt["NotResource"])))
+        else:
+            every_role = any(map(_all_roles, _as_list(stmt.get("Resource", []))))
+        key = "NotAction" if "NotAction" in stmt else "Action"
+        listed = any(
+            fnmatchcase("iam:passrole", str(a).lower()) for a in _as_list(stmt.get(key, []))
+        )
+        if every_role and listed == (key == "Action"):
+            out.append(stmt)
+    return out
+
+
+def _has_external_id(stmt: dict[str, Any]) -> bool:
+    condition = stmt.get("Condition")
+    if not isinstance(condition, dict):
+        return False
+    return any(
+        str(key).lower() == "sts:externalid"
+        for keys in condition.values()
+        if isinstance(keys, dict)
+        for key in keys
+    )
+
+
+def trust_findings(document: Any, account: str) -> list[tuple[str, Severity]]:
+    """(message, severity) for each risky grant in a role trust policy held by ``account``.
+
+    - HIGH: an Allow whose principal is ``"*"`` (or ``{"AWS": "*"}``, or any ``NotPrincipal``)
+      with no Condition, so any AWS principal can assume the role.
+    - MEDIUM: an Allow for another AWS account (a principal ARN or bare account ID that is not
+      ``account``) with no ``sts:ExternalId`` condition (presence only; its value and operator
+      are not evaluated).
+    Deny statements and service/federated principals are ignored.
+    """
+    out: dict[str, Severity] = {}
+    for stmt in _allow_statements(document):
+        principal = stmt.get("Principal", [])
+        values = principal.get("AWS", []) if isinstance(principal, dict) else principal
+        aws = ["*"] if "NotPrincipal" in stmt else [str(v) for v in _as_list(values)]
+        for value in aws:
+            parts = value.split(":")
+            other = parts[4] if value.startswith("arn:") and len(parts) > 4 else value
+            if value == "*":
+                if "Condition" not in stmt:
+                    out[
+                        'Trust policy lets any AWS principal ("*") assume the role, no Condition'
+                    ] = Severity.HIGH
+            elif other.isascii() and other.isdigit() and other != account:
+                if not _has_external_id(stmt):
+                    out[
+                        f"Trust policy lets AWS account {other} assume the role without an "
+                        "sts:ExternalId condition"
+                    ] = Severity.MEDIUM
+    return list(out.items())
