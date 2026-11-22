@@ -56,6 +56,16 @@ variable "extra_sinks" {
   description = "Additional sinks, e.g. an http ingestion endpoint. Reference secrets as secretsmanager:<name>, never as literals."
   type        = list(any)
   default     = []
+
+  validation {
+    condition = alltrue(flatten([
+      for sink in var.extra_sinks : [
+        for key in ["token", "client_secret"] :
+        try(sink.auth[key], null) == null || can(regex("^(env|secretsmanager|ssm):", sink.auth[key]))
+      ]
+    ]))
+    error_message = "An extra_sinks auth.token or auth.client_secret is a literal. Use a reference starting with env:, secretsmanager: or ssm: so the secret stays out of Terraform state and the Lambda configuration."
+  }
 }
 
 variable "enable_signing" {
@@ -100,6 +110,17 @@ variable "ssm_kms_key_arns" {
   validation {
     condition     = alltrue([for arn in var.ssm_kms_key_arns : startswith(arn, "arn:")])
     error_message = "Each ssm_kms_key_arns entry must be a full ARN (starting with \"arn:\")."
+  }
+}
+
+variable "auditor_principal_arns" {
+  description = "IAM principal ARNs (roles, users or an account root) that may read evidence objects (s3:GetObject and s3:ListBucket under evidence/, kms:Decrypt through S3) and verify run signatures (kms:Verify, kms:GetPublicKey). Empty adds no statements."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.auditor_principal_arns : startswith(arn, "arn:")])
+    error_message = "Each auditor_principal_arns entry must be a full ARN (starting with \"arn:\")."
   }
 }
 
