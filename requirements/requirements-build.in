@@ -1,0 +1,4 @@
+# The build backend (pyproject.toml build-system requires), hash-locked so builds can run
+# without build isolation instead of downloading it unpinned.
+setuptools>=68.0
+wheel
