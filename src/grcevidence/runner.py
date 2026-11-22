@@ -326,4 +326,8 @@ def deliver(result: RunResult, sinks: list[Sink]) -> RunResult:
             result.sink_results[sink.name] = "ok"
         except (SinkError, ValueError) as exc:
             result.sink_results[sink.name] = f"failed: {exc}"
+        except Exception as exc:
+            # Anything else (botocore, KeyError, http.client) must not skip the remaining sinks
+            # or abort the run: a Lambda retry would write the whole run again.
+            result.sink_results[sink.name] = f"failed: {type(exc).__name__}: {str(exc)[:200]}"
     return result

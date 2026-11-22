@@ -45,10 +45,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # GitHub's own guidance is to track codeql-action by major version tag
-      # rather than pin to a commit SHA: some of its features are gated by
-      # server-side flags tied to the tag, so an old SHA can silently lose
-      # functionality even though the code itself hasn't changed.
+      # Pinned to a commit SHA like every other action. GitHub's guidance is to
+      # track codeql-action by major tag because some features are gated by
+      # server-side flags; Dependabot's SHA bumps keep this pin current.
       # https://github.com/github/codeql-action#readme
       - name: Initialize CodeQL
         uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

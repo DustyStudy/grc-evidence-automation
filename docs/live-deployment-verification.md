@@ -18,6 +18,11 @@ current `verify` still accepts and reports as legacy. KMS signing
 (`kms:Sign`/`kms:Verify`) and the chain lookup against a real bucket have not
 been run live yet; they are covered by `moto`-based tests only.
 
+It also predates the nine collectors added after it (their counts in this
+document refer to the 13 collectors of that build), the Lambda error and
+missed-run alarms, the disabled async retries, the `ssm_parameter_arns`
+variables, and the GCP refusal in the Lambda. None of those were exercised live.
+
 - **Environment:** Windows 11, Python 3.14.7, Terraform 1.15.8, AWS provider
   ~> 6.0 (resolved 6.66.0), against a near-empty sandbox member account
   (default VPC only, no other resources) of a real AWS Organization.
@@ -163,8 +168,8 @@ Destroy complete! Resources: 2 destroyed.
 
 Post-teardown, the account has zero matching S3 buckets, Lambda functions,
 IAM roles, KMS aliases, or CloudWatch alarms. The KMS key is in AWS's
-mandatory 30-day `PendingDeletion` state (the module's `deletion_window_in_days
-= 30`, AWS's own minimum) — normal `terraform destroy` behavior for any KMS
+`PendingDeletion` state for the 30-day deletion window (the module's `deletion_window_in_days
+= 30`; AWS allows 7 to 30 days, so this is the maximum, not a minimum) — normal `terraform destroy` behavior for any KMS
 key, not something left running, with a trivial (~$1, one month, one key)
 residual cost until it auto-deletes.
 

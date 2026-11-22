@@ -17,6 +17,7 @@ variable "trusted_role_arn" {
 variable "external_id" {
   description = "ExternalId required to assume this role (confused-deputy protection). Must match `external_id` in the collector config."
   type        = string
+  sensitive   = true
 
   validation {
     condition     = length(var.external_id) >= 16

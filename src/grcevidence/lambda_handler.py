@@ -13,7 +13,9 @@ supply it would let them point an HTTP sink at their own endpoint with
 ``auth.token: secretsmanager:<a secret this role can read>`` and walk away with the secret.
 
 If any sink fails the handler raises after attempting all sinks, so Lambda's Errors metric
-(and the alarm in the Terraform module) fires rather than a silent gap in evidence.
+(and the alarm in the Terraform module) fires rather than a silent gap in evidence. It also
+raises, after delivery, when any evidence record has status ``error`` (a check that could not
+run), and refuses a config with ``gcp.projects``: the artifact ships no google-cloud libraries.
 """
 
 from __future__ import annotations
@@ -39,6 +41,11 @@ def handler(event: dict[str, Any] | None, context: Any = None) -> dict[str, Any]
         )
     raw = event.get("config") or json.loads(os.environ.get("GRC_CONFIG", "{}"))
     config = Config.from_dict(raw)
+    if config.gcp_projects:
+        raise ConfigError(
+            "GCP collectors are not packaged in the Lambda artifact; run GCP from the CLI or "
+            "remove gcp from the Lambda config"
+        )
     if event.get("collectors"):
         config.include = list(event["collectors"])
     session = aws_session(config.use_fips_endpoint)
@@ -49,10 +56,12 @@ def handler(event: dict[str, Any] | None, context: Any = None) -> dict[str, Any]
         )
 
     result = deliver(run(config, session=session, sinks=sinks), sinks)
+    errors = result.manifest.counts.get("error", 0)
     summary = {
         "run_id": result.manifest.run_id,
         "accounts": result.manifest.accounts,
         "counts": result.manifest.counts,
+        "errors": errors,
         "sinks": result.sink_results,
         "dry_run": bool(event.get("dry_run")),
         "signed": bool(result.manifest.signature),
@@ -61,4 +70,9 @@ def handler(event: dict[str, Any] | None, context: Any = None) -> dict[str, Any]
     log.info(json.dumps(summary))
     if result.failed_sinks:
         raise RuntimeError(f"evidence delivery failed: {result.failed_sinks}")
+    if errors:
+        # The evidence (error records included) is already delivered; raising makes the run count.
+        raise RuntimeError(
+            f"{errors} evidence record(s) have status error in run {result.manifest.run_id}"
+        )
     return summary

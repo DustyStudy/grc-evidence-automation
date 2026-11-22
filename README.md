@@ -10,14 +10,14 @@
 
 Read-only Python collectors gather configuration evidence from AWS (and optionally GCP), tag each record with the SOC 2 criteria, ISO 27001 Annex A controls, NIST 800-53 controls and FedRAMP 20x KSIs it is relevant to, seal it with a SHA-256, and deliver it on a schedule to an encrypted S3 evidence store and/or a GRC-platform ingestion API. Deploys as a Lambda with Terraform.
 
-**Verified live:** deployed into a member account of a real AWS Organization. A dry run returned 13 control results (5 pass, 7 fail, 1 not applicable), the real run delivered sealed evidence to S3, and `grc-evidence verify` confirmed every hash. The first `terraform apply` exposed a reserved-concurrency bug, now configurable. [Evidence](docs/live-deployment-verification.md).
+**Verified live (an earlier build):** deployed into a member account of a real AWS Organization. A dry run returned 13 control results (5 pass, 7 fail, 1 not applicable), the real run delivered sealed evidence to S3, and `grc-evidence verify` confirmed every hash. That run predates the signing, hash-chain, FIPS and newer collector work, which are covered by unit tests only. The first `terraform apply` exposed a reserved-concurrency bug, now configurable. [Evidence](docs/live-deployment-verification.md).
 
 ```mermaid
 flowchart LR
   EB[EventBridge schedule] --> L[Lambda: grcevidence]
   L -->|AssumeRole + ExternalId| M1[Member acct: read-only role]
   L -->|AssumeRole + ExternalId| M2[Member acct: read-only role]
-  L --> C[13 AWS + 2 GCP collectors]
+  L --> C[22 AWS collectors]
   C --> E[Evidence records<br/>controls + findings + sha256]
   E --> S3[(S3 evidence bucket<br/>SSE-KMS, versioned, Object Lock optional<br/>KMS-signed, hash-chained manifests)]
   E --> H[HTTP ingestion API<br/>bearer / OAuth2]
@@ -30,15 +30,15 @@ Built for the "evidence, not screenshots" problem: a crosswalk in the spirit of 
 
 | | |
 |---|---|
-| **15 collectors** | IAM (MFA, password policy, access-key hygiene, admin principals), S3 exposure and encryption, CloudTrail, KMS rotation, EBS/RDS encryption, security-group exposure, GuardDuty/Security Hub, AWS Config, VPC flow logs, backups; GCP Cloud Storage and firewall exposure. [Reference](docs/collectors.md) |
+| **24 collectors** | 22 AWS: IAM (MFA, password policy, access-key hygiene, admin principals), S3 exposure and encryption, CloudTrail, KMS rotation, EBS/RDS encryption, security-group exposure, GuardDuty/Security Hub, AWS Config, VPC flow logs, backups, ACM certificates, EKS, Identity Center, Secrets Manager rotation, Inspector vulnerability scanning, WAF; 2 GCP: Cloud Storage and firewall exposure (CLI only, see [Limitations](#limitations)). Each collector needs the read actions listed in the Terraform reader role, so re-apply the reader role in each member account after upgrading. [Reference](docs/collectors.md) |
 | **Control crosswalk** | Every collector maps to SOC 2 criteria, ISO 27001:2022 Annex A, NIST 800-53 controls and FedRAMP 20x KSIs, kept in [`collector_map.yaml`](src/grcevidence/data/collector_map.yaml) and validated in CI. |
-| **Honest coverage report** | Shows which controls have automated evidence, and which technical controls are gaps. Organizational controls (policies, board oversight, HR) are marked as outside what any collector can prove. [SOC 2 / ISO / NIST coverage](docs/coverage.md) |
-| **Integrity** | Every record carries a SHA-256, and the run manifest that lists them is signed with an asymmetric KMS key and hash-chained to the previous run. `grc-evidence verify` detects edited, missing and extra files, invalid signatures, and deleted, reordered or rewritten past runs. Paired with S3 Object Lock in `COMPLIANCE` mode, written evidence can't be changed or deleted at all. [What each layer does and doesn't stop](docs/ARCHITECTURE.md#integrity-and-threat-model). |
+| **Honest coverage report** | Shows which controls have automated evidence, and which technical controls are gaps. Organizational controls (policies, board oversight, HR) are marked as outside what any collector can prove. The percentages are over the controls this tool maps (a curated subset of each catalog, for example the 22 NIST 800-53 controls the collectors reference), not over the full SOC 2, ISO 27001 or NIST 800-53 catalogs. [SOC 2 / ISO / NIST coverage](docs/coverage.md) |
+| **Integrity** | Every record carries a SHA-256, and the run manifest that lists them is signed with an asymmetric KMS key and hash-chained to the previous run. `grc-evidence verify` detects edited, missing and extra files, invalid signatures, and deleted, reordered or rewritten past runs. Signing happens only when a `signing:` key is configured (the Terraform module enables it by default). Without `grc-evidence verify --key-id`, a writer to the store can re-hash and re-sign history with its own key, so the tamper-evidence claim holds only when verify pins the key. Paired with S3 Object Lock in `COMPLIANCE` mode, written evidence can't be changed or deleted at all for the retention period. [What each layer does and doesn't stop](docs/ARCHITECTURE.md#integrity-and-threat-model). |
 | **Judged against what** | Each manifest records the thresholds (`parameters`), the collectors that ran, the tool version and a hash of the effective config, so a `pass` can be tied to the bar it was judged against. |
-| **Failures are visible** | A check that cannot run (denied, throttled, service error) becomes an `error` record, never a silent pass. A failed delivery raises, so the Lambda alarm fires instead of leaving a quiet gap. |
+| **Failures are visible** | A check that cannot run (denied, throttled, service error, account not assumable) becomes an `error` record, never a silent pass, and an account that cannot be assumed turns every control `error` in the rollup. A run with any error record, or a failed delivery, raises after delivery so the Lambda error alarm fires. A scheduled run that never starts trips a separate missed-run alarm. |
 | **Multi-account** | Assumes a read-only role in each member account with an `ExternalId`. Terraform for the collector and for the member-account role. GovCloud/China ARN partitions are handled. |
 | **Sinks** | Local files, S3 (SSE-KMS), and a generic HTTP ingestion sink (bearer or OAuth2 client-credentials, retries, idempotency keys, no redirect following). |
-| **Infrastructure** | [Terraform](deploy/terraform): Lambda, EventBridge schedule, KMS-encrypted versioned bucket with optional Object Lock, least-privilege IAM, error alarm. |
+| **Infrastructure** | [Terraform](deploy/terraform): Lambda, EventBridge schedule, KMS-encrypted versioned bucket (Object Lock in `COMPLIANCE` mode by default, with `object_lock_days` required), least-privilege IAM, error and missed-run alarms. |
 
 ## Quick start
 
@@ -99,7 +99,7 @@ sinks:
     auth: {type: bearer, token: "secretsmanager:grc/ingest-token"}
 ```
 
-Unknown keys are errors. Secrets are references (`env:`, `secretsmanager:`, `ssm:`), and bare literals are rejected so credentials cannot end up in the config file.
+Unknown keys are errors. Secrets are references (`env:`, `secretsmanager:`, `ssm:`), and bare literals are rejected so credentials cannot end up in the config file. In the Lambda, `ssm:` references work only when their ARNs are passed as `ssm_parameter_arns` (and their KMS keys as `ssm_kms_key_arns`) to the Terraform module.
 
 ### Integrity: signing, chain and verify
 
@@ -120,7 +120,7 @@ grc-evidence verify s3://my-evidence-bucket/evidence --key-id <signing_key_arn>
 
 ### FIPS endpoints
 
-`use_fips_endpoint` (default `true`) makes every AWS client call FIPS 140 validated endpoints: collectors, STS role assumption, the S3 sink, and `secretsmanager:`/`ssm:` secret lookups. All the services involved have FIPS endpoints in the US commercial regions and GovCloud, which is where FedRAMP boundaries live. Configure only US regions in `regions`.
+`use_fips_endpoint` (default `true`) makes the AWS clients use FIPS 140 validated endpoints: collectors, STS role assumption, the S3 sink, and `secretsmanager:`/`ssm:` secret lookups. Not every service has a FIPS endpoint in every region, and only the clients covered by the FIPS unit tests are verified; check the endpoints for your regions before relying on this for a FedRAMP boundary. Configure only US regions in `regions`; nothing enforces this. The HTTP sink's TLS and the SHA-256 hashing run on the Python runtime's OpenSSL, which this project does not claim is FIPS-validated.
 
 One call needed a workaround: in the commercial partition, S3's `ListBuckets` has no FIPS endpoint (the bare `s3-fips.<region>` hostname has no address records; only per-bucket hostnames exist). With FIPS on, `aws.s3_security` lists buckets through the Cloud Control API (`cloudcontrolapi-fips`) in every enabled US region and merges the results. A US region it can't reach over FIPS becomes a MEDIUM finding (`regions_not_enumerated`), not a silent gap. Enabled non-US regions are listed in `regions_out_of_scope`, and they're neither queried nor findings. Keep them locked down with a region-restricting SCP. In GovCloud, `ListBuckets` has a FIPS endpoint and is used directly.
 
@@ -135,12 +135,12 @@ module "grc_evidence" {
   source           = "./deploy/terraform"
   lambda_zip_path  = "dist/grc-evidence-lambda.zip"
   schedule_expression = "cron(0 6 * * ? *)"
-  object_lock_days = 365                            # immutability; must be set when the bucket is created
-  object_lock_mode = "COMPLIANCE"                   # no one, including root, can shorten or remove it
+  object_lock_days = 365                            # required, no default; 0 turns Object Lock off. Set when the bucket is created
+  object_lock_mode = "COMPLIANCE"                   # the default; no one, including root, can shorten or remove it
   evidence_expiration_days = 730                    # must not be shorter than object_lock_days
   # enable_signing defaults to true: an ECC_NIST_P256 KMS key signs every run manifest
   target_role_arns = [module.reader_prod.role_arn]
-  alarm_actions    = [aws_sns_topic.security.arn]
+  alarm_actions    = [aws_sns_topic.security.arn]   # required, no default; [] is allowed but notifies nobody
   collector_config = {
     regions  = ["us-east-1"]
     accounts = [{ id = "111111111111", role_arn = module.reader_prod.role_arn, external_id = var.external_id }]
@@ -154,7 +154,7 @@ module "reader_prod" {                               # applied in each member ac
 }
 ```
 
-Invoke once with `{"dry_run": true}` to check permissions before the first scheduled run. The IAM policy is exactly the read-only action list the collectors use; `grc-evidence permissions` prints it and a test fails if the Terraform drifts from it. See [deploy/terraform/README.md](deploy/terraform/README.md). For a real deployment into a live AWS account, proving the module, the Lambda and the S3/KMS delivery path all actually work, plus a real deployability bug it found and fixed, see [`docs/live-deployment-verification.md`](docs/live-deployment-verification.md).
+Invoke once with `{"dry_run": true}` to check that the collectors can read their resources. A dry run builds no sinks, so it does not test `s3:PutObject`, the chain read, or secret lookups, and it logs counts only, not which collector failed. Before the first schedule, run a real invocation against a test prefix and check the delivered objects. The IAM policy is exactly the read-only action list the collectors use; `grc-evidence permissions` prints it and a test fails if the Terraform drifts from it. See [deploy/terraform/README.md](deploy/terraform/README.md). For a real deployment into a live AWS account, proving the module, the Lambda and the S3/KMS delivery path all actually work, plus a real deployability bug it found and fixed, see [`docs/live-deployment-verification.md`](docs/live-deployment-verification.md).
 
 ## Delivering to a GRC platform
 
@@ -204,7 +204,7 @@ findings are skipped inline in `deploy/terraform/main.tf` with the reason. See [
 
 ## Project health
 
-The [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/DustyStudy/grc-evidence-automation) badge reflects a young, solo-maintained project. Code-Review and Contributors need other people, and Maintained scores 0 for any repository under 90 days old. The checks about the code and supply chain (pinned dependencies, fuzzing, signed releases, token permissions, SAST, vulnerabilities) are the informative ones. `codeql-action` is left on its major tag deliberately, because GitHub gates some features on the tag.
+The [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/DustyStudy/grc-evidence-automation) badge reflects a young, solo-maintained project. Code-Review and Contributors need other people, and Maintained scores 0 for any repository under 90 days old. The checks about the code and supply chain (pinned dependencies, fuzzing, signed releases, token permissions, SAST, vulnerabilities) are the informative ones. `codeql-action` is pinned to a full commit SHA like every other action, and Dependabot proposes its updates.
 
 ## License
 

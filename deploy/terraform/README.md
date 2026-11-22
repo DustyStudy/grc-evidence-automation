@@ -15,11 +15,12 @@ See the root [README](../../README.md#deploy) for a module call. Key inputs:
 | `extra_sinks` | e.g. an HTTP ingestion sink (secrets by reference) |
 | `target_role_arns` | Member-account reader roles the function may assume |
 | `secret_arns` | Secrets Manager secrets the function may read (HTTP sink credentials) |
+| `ssm_parameter_arns`, `ssm_kms_key_arns` | SSM parameters the function may read for `ssm:/path` sink auth references, and the customer-managed KMS keys that encrypt them (SecureString). Both default to `[]` |
 | `reserved_concurrent_executions` | Defaults to 1 (runs must not overlap). Set to `-1` in an account whose Lambda concurrency quota is at the AWS floor of 10, where any reservation fails apply |
-| `object_lock_days`, `object_lock_mode` | Immutability. **Must be chosen at bucket creation.** `COMPLIANCE` mode cannot be shortened or removed by anyone, including you; use it in production. Defaults stay `0`/`GOVERNANCE` because enabling Object Lock on an existing bucket replaces the bucket |
+| `object_lock_days`, `object_lock_mode` | Immutability. **Must be chosen at bucket creation**: changing `object_lock_days` between `0` and a positive value later replaces the bucket. `object_lock_days` is **required** (no default); `0` is an explicit opt-out. `object_lock_mode` defaults to `COMPLIANCE`, which cannot be shortened or removed by anyone, including you; `GOVERNANCE` can be bypassed with `s3:BypassGovernanceRetention` |
 | `evidence_expiration_days` | Retention. Align with your audit period and data-retention policy. Plan fails if it is shorter than `object_lock_days` |
 | `enable_signing` | Default `true`. Creates an asymmetric `ECC_NIST_P256` KMS key (`signing_key_arn` output) and grants the function `kms:Sign` on it, so every run manifest is signed. KMS can't rotate asymmetric keys: to rotate, create a new key and keep the old one to verify older runs |
-| `alarm_actions` | SNS topics for the error alarm |
+| `alarm_actions` | **Required** (no default). SNS topics for the error alarm and the missed-run alarm (no invocation in a day; assumes a daily schedule). Pass `[]` explicitly for no notification |
 
 ## Notes
 

@@ -357,7 +357,7 @@ resource "aws_cloudwatch_log_group" "function" {
 #trivy:ignore:AWS-0066 X-Ray off by design; see the CKV_AWS_50 skip below.
 resource "aws_lambda_function" "collector" {
   #checkov:skip=CKV_AWS_117:Calls only AWS/GCP APIs over TLS; a VPC would add NAT cost with no data-path benefit
-  #checkov:skip=CKV_AWS_116:Invoked by an EventBridge schedule, and failures raise the errors alarm; the next scheduled run retries
+  #checkov:skip=CKV_AWS_116:Async retries are disabled (event invoke config below), so there is no retried event to dead-letter; a failed run raises the errors alarm and the next scheduled run collects again
   #checkov:skip=CKV_AWS_272:Deployed from a locally built zip; code signing needs a Signer profile the caller would have to own
   #checkov:skip=CKV_AWS_50:X-Ray adds cost and IAM scope for one scheduled function; CloudWatch Logs and the errors alarm cover diagnosis
   function_name                  = var.name
@@ -379,6 +379,12 @@ resource "aws_lambda_function" "collector" {
   }
 
   depends_on = [aws_cloudwatch_log_group.function]
+}
+
+# EventBridge invokes asynchronously; Lambda's default two retries would each write another full run.
+resource "aws_lambda_function_event_invoke_config" "collector" {
+  function_name          = aws_lambda_function.collector.function_name
+  maximum_retry_attempts = 0
 }
 
 resource "aws_cloudwatch_event_rule" "schedule" {
@@ -413,6 +419,28 @@ resource "aws_cloudwatch_metric_alarm" "errors" {
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = var.alarm_actions
+  tags                = var.tags
+
+  dimensions = {
+    FunctionName = aws_lambda_function.collector.function_name
+  }
+}
+
+# A run that never starts emits no Errors datapoint, so alarm on a day without invocations.
+# The 1-day period assumes a daily schedule (the schedule_expression default); a less
+# frequent schedule would alarm between runs.
+resource "aws_cloudwatch_metric_alarm" "missed_run" {
+  alarm_name          = "${var.name}-missed-run"
+  alarm_description   = "No evidence collection run started in the last day"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Invocations"
+  statistic           = "Sum"
+  period              = 86400
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
   alarm_actions       = var.alarm_actions
   tags                = var.tags
 
