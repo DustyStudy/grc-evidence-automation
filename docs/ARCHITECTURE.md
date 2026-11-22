@@ -15,7 +15,7 @@ collector, provider, title, account, region, collected_at
 status         pass | fail | error | info | not_applicable
 summary        one line
 findings[]     {resource, message, severity}
-data           counts and configuration facts (no secrets, no resource contents)
+data           counts, configuration facts, resource ids and names (no secrets, no resource contents)
 controls       {soc2: [...], iso27001: [...], nist_800_53: [...], fedramp_20x: [...]}
 schema_version, sha256
 ```
@@ -51,7 +51,11 @@ The evidence store should let an auditor trust that what they sample is what the
 
 It does **not** stop a principal that can call `kms:Sign` on the key. In the Terraform module that is only the collector's own role, and that is the residual risk: whoever can act as that role (or rewrite the key policy as an account administrator) can sign anything. Every `Sign` call is a CloudTrail management event, so an auditor can reconcile signatures against runs, and a forged re-signing shows up as an extra call. A signature also does not prove the collected facts were true (a compromised collector signs what it collects), and it does not stop a run from being deleted.
 
-**Hash chain (across runs).** Before sealing, the runner reads the newest completed manifest from the primary durable sink (the first `s3` or `local` sink) and records its `run_id` and `sha256` in `previous`. The first run in an empty store is the genesis. If the lookup fails, the run fails, instead of writing a false genesis that would hide a break. `verify` on a parent directory checks every run and every link, and reports:
+**Hash chain (across runs).** Before sealing, the runner reads the newest completed manifest from the primary durable sink (the first `s3` or `local` sink) and records its `run_id` and `sha256` in `previous`. The first run in an empty store is the genesis. If the lookup fails, the run fails, instead of writing a false genesis that would hide a break.
+
+Only that one sink is read. Sinks are tried in the order they're listed, the first `s3` or `local` one supplies `previous`, and the same manifest goes to every sink, so a second store carries the first store's chain. An `http` sink is never read. A config whose only sink is `http` therefore has no chain: every run is sealed with `previous: null`, as a genesis, and nothing warns about it. A dry run builds no sinks and is also sealed as a genesis, but it isn't delivered.
+
+`verify` on a parent directory checks every run and every link, and reports:
 
 - a deleted run in the middle of the history (the next run points at a run that is not there),
 - a reordered, renamed or inserted run (a run does not point at the run before it, or claims genesis after earlier runs),
@@ -79,6 +83,24 @@ It does **not** detect truncation: deleting the newest run(s) leaves nothing poi
 | Add a fabricated run | | detects, unless it can call `kms:Sign` | detects | |
 | Act as the collector role (`kms:Sign`) | | CloudTrail shows the extra `Sign` calls | detects edits to past runs | prevents changes to written objects |
 
+### The signing key
+
+- **It can't rotate.** It's an asymmetric key (`ECC_NIST_P256`, `SIGN_VERIFY`), and KMS doesn't rotate asymmetric keys automatically. One key signs for the life of the store. Replacing it means a new key, a new `--key-id`, and a pinned `verify` over the whole store then fails every run the other key signed.
+- **Deleting it makes past signatures unverifiable.** `verify` checks a signature by calling `kms:Verify` on the key. It has no offline path and doesn't export the public key. A deleted or disabled key leaves every run it signed reported as "signature could not be checked", which is a failure. The hashes and the chain can still be checked with `--skip-signature`.
+- **The module protects it from Terraform, not from everything.** Both the signing key and the evidence key have `prevent_destroy = true`, so `terraform destroy`, a replacing change, or `enable_signing = false` fails at plan. A deletion scheduled in the console or through the API isn't stopped by that; the 30-day deletion window is the only margin.
+
+### Auditor access for `verify`
+
+`grc-evidence verify s3://bucket/prefix --key-id <signing_key_arn>` makes three kinds of AWS call:
+
+| Call | IAM action | On |
+|---|---|---|
+| List every object under the prefix | `s3:ListBucket` | the bucket (it can be limited with an `s3:prefix` condition) |
+| Download each object to a temporary directory | `s3:GetObject` | `arn:<partition>:s3:::<bucket>/<prefix>/*` |
+| Check each manifest signature | `kms:Verify` | the signing key |
+
+The tool calls nothing else. Two things follow from the store rather than the code. The module's bucket is SSE-KMS, so S3 won't return an object unless the caller also has `kms:Decrypt` on the evidence key. And the calls go to FIPS endpoints, as everywhere else. `--skip-signature` drops the `kms:Verify` requirement. Without `--key-id`, `kms:Verify` is called on whichever key each manifest names. The role needs no write, `kms:Sign` or `s3:GetObjectVersion` permission; only current object versions are read.
+
 Production settings: signing on (the module default), `object_lock_mode = "COMPLIANCE"`, `object_lock_days` at least your audit period, `evidence_expiration_days` not shorter than `object_lock_days` (the module rejects a shorter value), and `verify --key-id` pinned to the module's `signing_key_arn` output.
 
 ## Decisions
@@ -87,7 +109,7 @@ Production settings: signing on (the module default), `object_lock_mode = "COMPL
 
 **Read-only by construction.** Collectors call only `Describe*`/`Get*`/`List*` style APIs (plus `iam:GenerateCredentialReport`, which creates a report but changes no configuration). A test compares each collector's declared permissions with the Terraform policy in both directions and rejects write-style verbs, so the IAM policy cannot silently grow or shrink away from the code.
 
-**Facts, not contents.** Records hold booleans, counts and resource identifiers. They never read object contents, secret values or user data, which keeps the evidence store low-sensitivity, although resource names and account ids are still worth treating as internal.
+**Facts, not contents.** Records hold booleans, counts, resource identifiers and names. Collectors never read object contents or secret values. Names of people and groups do appear: `aws.iam_identity_center` records the Identity Center user name or group display name behind each account assignment, and the IAM collectors record IAM user, role and policy names. Account ids and resource names (buckets, security groups, permission sets) appear throughout. Treat the evidence store, and anything an HTTP sink sends, as internal.
 
 **One crosswalk file, validated.** `collector_map.yaml` is data, reviewable by a GRC person without reading Python. CI fails if a mapping refers to a control that is not in `controls.yaml`, if a collector has no mapping, or if the committed coverage doc is out of date.
 
@@ -95,9 +117,9 @@ Production settings: signing on (the module default), `object_lock_mode = "COMPL
 
 **Rollup precedence: fail > error > pass > not_applicable.** A control is only "pass" when at least one relevant check passed and none failed or errored.
 
-**HTTP sink safety.** HTTPS required (an explicit flag exists for local tests), no credentials in URLs, secrets by reference only, redirects are never followed (an `Authorization` header must not be replayed to another host), 4xx fails fast, 429/5xx retry with backoff honoring `Retry-After`, payload size is capped, and every POST carries an idempotency key derived from the content hash.
+**HTTP sink safety.** HTTPS required for the ingest URL and the OAuth2 `token_url` (an explicit flag allows `http` for local tests), with the Python runtime's default certificate and hostname verification; there is no option to turn verification off. A URL with userinfo (`user:pass@host`) is rejected. The query string is not inspected, so a token placed there is sent as written: put secrets in `auth`, by reference. Configured `headers` go only to the ingest URL, not to the token endpoint. Redirects are never followed (an `Authorization` header must not be replayed to another host), so a 3xx fails like any other non-retried status. 4xx fails fast, 429/5xx retry with backoff honoring `Retry-After`, payload size is capped, and every POST carries an idempotency key derived from the content hash. Error messages name the scheme, host and path and the status code only, never the query string or the response body.
 
-**S3 sink.** SSE-KMS when a key is configured. Records are written before the manifest, so a manifest's presence marks a complete run. Immutability comes from S3 Object Lock on the bucket (Terraform option), not from application code. The bucket policy denies non-TLS and non-KMS uploads. The collector role can list and read the evidence prefix so it can find the previous run for the chain.
+**S3 sink.** SSE-KMS when `kms_key_id` is configured, otherwise SSE-S3 (`AES256`). The module's bucket policy denies SSE-S3 and any key other than its own key ARN, so `kms_key_id` is required for that bucket. Keys are `<prefix>/dt=YYYY-MM-DD/<run_id>/<file>`, partitioned by the run's UTC start date; the local sink writes `<path>/<run_id>/<file>` with no date level. Every put is conditional (`If-None-Match: *`), so an existing object is never overwritten and a repeated write fails. With `expected_bucket_owner` set, every call carries `ExpectedBucketOwner`. Records are written before the manifest, so a manifest's presence marks a complete run. Immutability comes from S3 Object Lock on the bucket (Terraform option), not from application code. The bucket policy denies non-TLS and non-KMS uploads. The collector role can list and read the evidence prefix so it can find the previous run for the chain.
 
 **Fail closed on integrity.** If signing is configured and `kms:Sign` fails, or the previous run cannot be read, the run fails (and the error alarm fires) instead of delivering an unsigned or unchained manifest. The next scheduled run retries.
 
