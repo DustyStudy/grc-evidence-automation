@@ -19,6 +19,9 @@ htmlcov/
 *.tfvars
 !*.tfvars.example
 .terraform.lock.hcl
+# the provider locks of the deployed modules are committed, so providers are pinned by hash
+!deploy/terraform/.terraform.lock.hcl
+!deploy/terraform/reader_role/.terraform.lock.hcl
 
 # local evidence output and configs (may contain account ids and secrets references)
 evidence/

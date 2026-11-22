@@ -7,7 +7,19 @@ Lightweight process; this is a solo-maintained project.
 ```bash
 git clone https://github.com/DustyStudy/grc-evidence-automation.git
 cd grc-evidence-automation
-python -m pip install -e ".[dev]"
+python -m pip install --require-hashes -r requirements/requirements-dev.txt
+python -m pip install --no-build-isolation --no-deps -e .
+```
+
+The first command installs the hash-pinned development dependencies, including the build backend (`setuptools`, `wheel`); the second installs this package with that backend instead of downloading an unpinned one. The optional GCP collectors have their own lock: `python -m pip install --require-hashes -r requirements/requirements-gcp.txt`. The Lambda zip (`python scripts/build_lambda.py`) takes its one third-party dependency from `requirements/requirements-lambda.txt`.
+
+## Commit hooks
+
+Secret scanning (gitleaks) and `terraform fmt` run as pre-commit hooks, pinned by commit SHA in `.pre-commit-config.yaml`. Install them once per clone (`terraform` must be on your `PATH`):
+
+```bash
+python -m pip install pre-commit
+pre-commit install
 ```
 
 ## Before opening a PR
@@ -41,7 +53,7 @@ Refresh them with `--upgrade` every so often, and whenever a security alert name
 `fuzz/targets.py` holds functions that must keep an invariant for *any* input (tampering with a stored run is always reported, a record survives a write/read round trip with its hash intact, untrusted text cannot inject markup into a report, malformed configuration raises `ConfigError`). They run as ordinary tests on a seed corpus and random inputs. For coverage-guided fuzzing:
 
 ```bash
-pip install atheris                       # Linux and macOS, Python 3.11 to 3.13
+pip install --require-hashes -r requirements/requirements-fuzz.txt   # Atheris; Linux and macOS, Python 3.11 to 3.13
 python fuzz/run_fuzzer.py verify fuzz/corpus/verify -max_total_time=60
 ```
 

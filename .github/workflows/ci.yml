@@ -48,7 +48,7 @@ jobs:
       - name: Install package + dev dependencies
         run: |
           python -m pip install --require-hashes -r requirements/requirements-dev.txt
-          python -m pip install --no-deps -e .
+          python -m pip install --no-build-isolation --no-deps -e .
 
       - name: Ruff lint
         run: ruff check src tests fuzz scripts
@@ -88,7 +88,7 @@ jobs:
       - name: Install package + dev dependencies
         run: |
           python -m pip install --require-hashes -r requirements/requirements-dev.txt
-          python -m pip install --no-deps -e .
+          python -m pip install --no-build-isolation --no-deps -e .
 
       - name: Pytest
         run: pytest -v
@@ -122,7 +122,7 @@ jobs:
       - name: Build sdist and wheel, check metadata
         run: |
           python -m pip install --require-hashes -r requirements/requirements-release-tools.txt
-          python -m build
+          python -m build --no-isolation
           python -m twine check --strict dist/*
 
       - name: The installed wheel runs and ships its data files
@@ -168,7 +168,7 @@ jobs:
       - name: Install Atheris and the package
         run: |
           python -m pip install --require-hashes -r requirements/requirements-fuzz.txt
-          python -m pip install --no-deps -e .
+          python -m pip install --no-build-isolation --no-deps -e .
 
       - name: Fuzz ${{ matrix.target }} for 30 seconds
         run: |
@@ -244,9 +244,11 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      # The dev lock (not the runtime one) because it carries the hash-locked build backend
+      # that the editable install and the Lambda build below use without build isolation.
       - run: |
-          python -m pip install --require-hashes -r requirements/requirements-runtime.txt
-          python -m pip install --no-deps -e .
+          python -m pip install --require-hashes -r requirements/requirements-dev.txt
+          python -m pip install --no-build-isolation --no-deps -e .
 
       - name: Validate control crosswalk
         run: grc-evidence coverage --check
