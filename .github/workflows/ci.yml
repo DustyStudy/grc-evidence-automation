@@ -215,9 +215,7 @@ jobs:
         run: python -m pip install --require-hashes -r requirements/requirements-lock-tools.txt
 
       - name: Requirement files are current
-        run: |
-          python scripts/lock.py
-          git diff --exit-code -- requirements
+        run: python scripts/lock.py --check
 
   crosswalk:
     # The control mapping is data reviewed by GRC staff; fail fast if it is inconsistent.
