@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -9,7 +10,19 @@ from botocore.exceptions import ClientError
 from grcevidence.collectors.base import Collector, Context, Result, paginate, register, resource
 from grcevidence.models import Finding, Severity
 
-_OPEN_CIDRS = {"0.0.0.0/0", "::/0"}
+_TCP = {"tcp", "6"}
+
+
+def _covers_internet(cidrs: list[str]) -> bool:
+    """True when the CIDRs together cover all of IPv4 or all of IPv6 (so "0.0.0.0/1" plus
+    "128.0.0.0/1" counts). A malformed CIDR raises ValueError, which the base class records
+    as ERROR rather than reading it as "not open"."""
+    nets = [ipaddress.ip_network(c.strip(), strict=False) for c in cidrs]
+    for version in (4, 6):
+        family: list[Any] = [n for n in nets if n.version == version]
+        if any(n.prefixlen == 0 for n in ipaddress.collapse_addresses(family)):
+            return True
+    return False
 
 
 @register
@@ -214,14 +227,23 @@ class VpcFlowLogs(Collector):
         vpc_list = paginate(ec2, "describe_vpcs", "Vpcs", cap)
         vpcs = [v["VpcId"] for v in vpc_list]
         flow_logs = paginate(ec2, "describe_flow_logs", "FlowLogs", cap * 4)
+        # REJECT-only logs miss accepted traffic, and a log that fails delivery records nothing.
         covered = {
-            f["ResourceId"] for f in flow_logs if f.get("FlowLogStatus", "ACTIVE") == "ACTIVE"
+            f["ResourceId"]
+            for f in flow_logs
+            if f.get("FlowLogStatus", "ACTIVE") == "ACTIVE"
+            and f.get("DeliverLogsStatus") == "SUCCESS"
+            and f.get("TrafficType") in {"ALL", "ACCEPT"}
         }
         missing = [v for v in vpcs if v not in covered]
         return Result(
             summary=f"{len(vpcs) - len(missing)}/{len(vpcs)} VPC(s) have an active VPC-level flow log",
             findings=[
-                Finding(v, "No active flow log attached to this VPC", Severity.MEDIUM)
+                Finding(
+                    v,
+                    "No active flow log delivering ALL or ACCEPT traffic is attached to this VPC",
+                    Severity.MEDIUM,
+                )
                 for v in missing
             ],
             data={
@@ -255,32 +277,38 @@ class NetworkExposure(Collector):
         exposed: set[str] = set()
         for g in groups:
             label = f"{g['GroupId']} ({g.get('GroupName', '')})"
-            open_ports: set[int] = set()
-            all_traffic = False
+            # Ranges are pooled across the group's rules before judging, so an "any" source
+            # split over several CIDRs or several rules is still seen as internet-open.
+            any_proto: list[str] = []
+            tcp: list[tuple[int, int, list[str]]] = []
             for perm in g.get("IpPermissions", []):
                 cidrs = [r["CidrIp"] for r in perm.get("IpRanges", [])] + [
                     r["CidrIpv6"] for r in perm.get("Ipv6Ranges", [])
                 ]
-                if not _OPEN_CIDRS.intersection(cidrs):
-                    continue
                 proto = perm.get("IpProtocol")
                 if proto == "-1":
-                    findings.append(
-                        Finding(label, "Allows ALL traffic from the internet", Severity.CRITICAL)
-                    )
-                    exposed.add(g["GroupId"])
-                    all_traffic = True
-                elif proto in {"tcp", "6"}:
-                    lo, hi = perm.get("FromPort", 0), perm.get("ToPort", 65535)
-                    for port in sensitive:
-                        if lo <= port <= hi:
-                            findings.append(
-                                Finding(
-                                    label, f"Port {port}/tcp open to the internet", Severity.HIGH
-                                )
-                            )
-                            exposed.add(g["GroupId"])
-                            open_ports.add(port)
+                    any_proto += cidrs
+                elif proto in _TCP:
+                    tcp.append((perm.get("FromPort", 0), perm.get("ToPort", 65535), cidrs))
+            all_traffic = _covers_internet(any_proto)
+            if all_traffic:
+                findings.append(
+                    Finding(label, "Allows ALL traffic from the internet", Severity.CRITICAL)
+                )
+                any_proto = []  # already reported; ports below are judged on the tcp rules alone
+            open_ports = {
+                port
+                for port in sensitive
+                if _covers_internet(
+                    any_proto + [c for lo, hi, cidrs in tcp if lo <= port <= hi for c in cidrs]
+                )
+            }
+            findings += [
+                Finding(label, f"Port {port}/tcp open to the internet", Severity.HIGH)
+                for port in sorted(open_ports)
+            ]
+            if all_traffic or open_ports:
+                exposed.add(g["GroupId"])
             resources.append(
                 resource(
                     g["GroupId"],

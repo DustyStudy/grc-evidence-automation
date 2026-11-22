@@ -48,18 +48,35 @@ class S3Security(Collector):
             )
             for region, reason in not_enumerated
         ]
-        unversioned = 0
+        if out_of_scope:
+            # Cloud Control ListResources is region-scoped, so buckets there were never seen.
+            findings.append(
+                Finding(
+                    "regions_out_of_scope",
+                    "Buckets in enabled non-US region(s) were not examined (no FIPS listing "
+                    f"there): {', '.join(out_of_scope)}",
+                    Severity.MEDIUM,
+                )
+            )
+        unversioned = unreadable = 0
         resources: list[dict[str, Any]] = []
         for name in buckets:
             bucket_findings, attrs = self._check_bucket(s3, name)
-            findings += bucket_findings
             versioning: bool | None = None
             try:
                 versioning = s3.get_bucket_versioning(Bucket=name).get("Status") == "Enabled"
                 if not versioning:
                     unversioned += 1
-            except ClientError:
-                pass
+            except ClientError as exc:
+                unreadable += 1
+                bucket_findings.append(
+                    Finding(
+                        name,
+                        f"Could not read versioning: {exc.response['Error']['Code']}",
+                        Severity.LOW,
+                    )
+                )
+            findings += bucket_findings
             resources.append(
                 resource(
                     name, "AWS::S3::Bucket", not bucket_findings, **attrs, versioning=versioning
@@ -77,6 +94,8 @@ class S3Security(Collector):
                 "truncated": truncated,
                 "resources": resources,
             },
+            # Nothing but unreadable versioning: the check could not be made, which is ERROR.
+            status=Status.ERROR if unreadable and unreadable == len(findings) else None,
             truncated_at=limit if truncated else None,
         )
 
@@ -90,9 +109,9 @@ class S3Security(Collector):
         In the commercial partition S3 has no FIPS endpoint for ListBuckets: the bare
         s3-fips.<region> hostname has no address records, only bucket-scoped hosts do. With
         FIPS on there, buckets are listed through Cloud Control API (which has FIPS
-        endpoints) in every enabled US region; FedRAMP boundaries are US-only, so non-US
-        regions are recorded as out of scope rather than raised as findings. A US region
-        that can't be reached over FIPS is reported, not silently skipped.
+        endpoints) in every enabled US region. That listing is region-scoped, so enabled
+        non-US regions are not queried and the caller reports them as unexamined. A US
+        region that can't be reached over FIPS is reported, not silently skipped.
         """
         if not (ctx.use_fips_endpoint and ctx.partition == "aws"):
             listed = [b["Name"] for b in s3.list_buckets().get("Buckets", [])]

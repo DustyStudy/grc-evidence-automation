@@ -8,7 +8,24 @@ from fnmatch import fnmatchcase
 from typing import Any
 from urllib.parse import unquote
 
-ADMIN_ACTIONS = {"*", "*:*", "iam:*"}  # full IAM lets a principal grant itself anything
+# IAM actions that let a principal grant itself anything when allowed on every IAM resource.
+# A policy action (which may be a wildcard: "*", "iam:*", "iam:Attach*", "iam:Put*Policy") is
+# admin-equivalent when it matches any of them. iam:PassRole is deliberately not listed.
+ADMIN_ACTIONS = frozenset(
+    {
+        "iam:attachuserpolicy",
+        "iam:attachgrouppolicy",
+        "iam:attachrolepolicy",
+        "iam:putuserpolicy",
+        "iam:putgrouppolicy",
+        "iam:putrolepolicy",
+        "iam:createpolicyversion",
+        "iam:setdefaultpolicyversion",
+        "iam:addusertogroup",
+        "iam:createaccesskey",
+        "iam:updateassumerolepolicy",
+    }
+)
 CONDITIONAL_NOTE = " (grant is conditional: review the Condition)"
 _VARIABLE = re.compile(r"\$\{[^}]*\}")  # policy variables such as ${aws:username} contain ":"
 
@@ -78,14 +95,20 @@ def _all_iam_resources(value: Any) -> bool:
     )
 
 
+def _granted(patterns: set[str]) -> set[str]:
+    """The admin actions matched by any of the (lower-cased) policy action patterns."""
+    return {a for a in ADMIN_ACTIONS if any(fnmatchcase(a, p) for p in patterns)}
+
+
 def admin_statements(document: Any) -> list[dict[str, Any]]:
     """The statements that make ``document`` administrator-equivalent.
 
     A statement qualifies when it is ``Allow`` and either
     - covers every resource (``"*"``, a partition-wide wildcard ARN, or any ``NotResource``)
-      with ``*``/``*:*``/``iam:*`` (case-insensitive) or with ``NotAction``, or
-    - covers every IAM resource with ``*``/``*:*``/``iam:*``, or with a ``NotAction`` that
-      does not exclude them (it can attach AdministratorAccess to itself).
+      with an action matching one of ``ADMIN_ACTIONS`` (case-insensitive; ``*``, ``*:*``,
+      ``iam:*``, ``iam:Attach*``, ``iam:CreateAccessKey`` ...) or with ``NotAction``, or
+    - covers every IAM resource with such an action, or with a ``NotAction`` that does not
+      exclude all of them (it can attach AdministratorAccess to itself).
     Conditions do not disqualify a statement; callers record them. Deny statements are not
     subtracted. Malformed statements raise ``ValueError`` rather than reading as "not admin".
     """
@@ -103,10 +126,10 @@ def admin_statements(document: Any) -> list[dict[str, Any]]:
         every_iam = every or any(map(_all_iam_resources, resources))
         if "NotAction" in stmt:
             excluded = {str(a).lower() for a in _as_list(stmt["NotAction"])}
-            grants = every or (every_iam and not excluded & ADMIN_ACTIONS)
+            grants = every or (every_iam and _granted(excluded) != ADMIN_ACTIONS)
         else:
             actions = {str(a).lower() for a in _as_list(stmt.get("Action", []))}
-            grants = every_iam and bool(actions & ADMIN_ACTIONS)
+            grants = every_iam and bool(_granted(actions))
         if grants:
             out.append(stmt)
     return out

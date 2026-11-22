@@ -118,7 +118,7 @@ def test_commercial_fips_lists_buckets_through_cloud_control_in_every_region(mon
     )
     assert names == ["a", "b", "c"] and method == "cloudcontrol"
     assert [r for r, _ in skipped] == ["us-west-1"]  # unreachable US region is reported
-    assert out_of_scope == ["eu-west-1"]  # non-US: recorded, not queried, not a finding
+    assert out_of_scope == ["eu-west-1"]  # non-US: recorded, not queried
 
 
 def test_cloud_control_errors_are_reported_not_hidden(monkeypatch):
@@ -186,6 +186,8 @@ def test_collector_end_to_end_with_cloud_control_listing(make_ctx, session, monk
     assert [r["id"] for r in ev.data["resources"]] == ["alpha", "beta"]
     assert ev.data["regions_not_enumerated"] == ["us-west-1"]
     assert ev.data["regions_out_of_scope"] == ["eu-west-1"]
-    # An unreachable US region is a finding; a non-US region is recorded but never a finding.
+    # An unreachable US region is a finding, and so is an enabled non-US region left unexamined.
     assert any("us-west-1" in f.message for f in ev.findings)
-    assert not any("eu-west-1" in f.message for f in ev.findings)
+    assert [
+        f.message.endswith("eu-west-1") for f in ev.findings if f.resource == "regions_out_of_scope"
+    ] == [True]

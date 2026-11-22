@@ -19,6 +19,7 @@ LIMITATIONS = [
     "Service control policies and resource control policies are not evaluated",
     "Explicit Deny statements are not subtracted from Allow grants",
     "Condition keys are recorded (has_condition) but not evaluated",
+    "Role trust policies and iam:PassRole escalation paths are not evaluated",
 ]
 _KINDS = (  # GAAD list key, policy list key, CloudFormation type, data key
     ("UserDetailList", "UserPolicyList", "AWS::IAM::User", "admin_users"),
