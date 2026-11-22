@@ -28,6 +28,7 @@ from grcevidence.models import (
     kms_region,
     utc_iso,
 )
+from grcevidence.secrets import is_reference
 from grcevidence.sinks import HttpSink, LocalSink, S3Sink, Sink, SinkError
 
 
@@ -96,6 +97,16 @@ class Config:
             raise ConfigError("use_fips_endpoint must be true or false")
         if not all(isinstance(s, dict) for s in sinks):
             raise ConfigError("each sink must be a mapping")
+        # Checked at load, not first delivery, so a dry run or a deploy never accepts a literal.
+        for i, sink in enumerate(sinks):
+            auth = sink.get("auth")
+            for key in ("token", "client_id", "client_secret"):
+                if isinstance(auth, dict) and key in auth and not is_reference(auth[key]):
+                    # Name the field only: the value may be a real credential.
+                    raise ConfigError(
+                        f"sinks[{i}] auth {key} must be a secret reference "
+                        "(env:NAME, secretsmanager:ID or ssm:/path), not a literal value"
+                    )
         signing_key_id = None
         if raw.get("signing") is not None:
             signing = _mapping(raw["signing"], "signing")

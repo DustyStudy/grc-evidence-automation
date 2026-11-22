@@ -24,6 +24,7 @@ locals {
     # Omit the key entirely when signing is off: the app rejects a null signing block.
     var.enable_signing ? { signing = { kms_key_id = one(aws_kms_key.signing[*].arn) } } : {},
   )
+  grc_config_json = jsonencode(local.grc_config)
 }
 
 # --------------------------------------------------------------------------- KMS
@@ -56,6 +57,28 @@ data "aws_iam_policy_document" "kms" {
       test     = "ArnLike"
       variable = "kms:EncryptionContext:aws:logs:arn"
       values   = ["arn:${local.partition}:logs:${local.region}:${local.account_id}:log-group:/aws/lambda/${var.name}"]
+    }
+  }
+
+  # Auditors read evidence through S3 only; the key also encrypts the logs and GRC_CONFIG.
+  dynamic "statement" {
+    for_each = length(var.auditor_principal_arns) > 0 ? [1] : []
+
+    content {
+      sid       = "AuditorDecryptEvidence"
+      actions   = ["kms:Decrypt"]
+      resources = ["*"]
+
+      principals {
+        type        = "AWS"
+        identifiers = var.auditor_principal_arns
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["s3.${local.region}.amazonaws.com"]
+      }
     }
   }
 }
@@ -225,6 +248,42 @@ data "aws_iam_policy_document" "bucket" {
       test     = "StringNotEquals"
       variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
       values   = [aws_kms_key.evidence.arn]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.auditor_principal_arns) > 0 ? [1] : []
+
+    content {
+      sid       = "AuditorReadEvidence"
+      actions   = ["s3:GetObject"]
+      resources = ["${aws_s3_bucket.evidence.arn}/evidence/*"]
+
+      principals {
+        type        = "AWS"
+        identifiers = var.auditor_principal_arns
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.auditor_principal_arns) > 0 ? [1] : []
+
+    content {
+      sid       = "AuditorListEvidence"
+      actions   = ["s3:ListBucket"]
+      resources = [aws_s3_bucket.evidence.arn]
+
+      principals {
+        type        = "AWS"
+        identifiers = var.auditor_principal_arns
+      }
+
+      condition {
+        test     = "StringLike"
+        variable = "s3:prefix"
+        values   = ["evidence/", "evidence/*"]
+      }
     }
   }
 }
@@ -400,11 +459,19 @@ resource "aws_lambda_function" "collector" {
 
   environment {
     variables = {
-      GRC_CONFIG = jsonencode(local.grc_config)
+      GRC_CONFIG = local.grc_config_json
     }
   }
 
   depends_on = [aws_cloudwatch_log_group.function]
+
+  lifecycle {
+    precondition {
+      # Byte count, not characters: base64 is 4 chars per 3 bytes, so 5460 chars = 4095 bytes.
+      condition     = length(base64encode(local.grc_config_json)) <= 5460
+      error_message = "GRC_CONFIG is 4096 bytes or more; Lambda rejects environment variables over 4 KB in total. Configure fewer accounts, or split the config across more than one deployment of this module."
+    }
+  }
 }
 
 # EventBridge invokes asynchronously; Lambda's default two retries would each write another full run.
