@@ -20,6 +20,7 @@ Config example::
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -41,6 +42,17 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _OPENER = urllib.request.build_opener(_NoRedirect)
 MAX_BODY_BYTES = 5 * 1024 * 1024
+
+
+def _safe_url(url: str) -> str:
+    """Scheme, host and path only: query strings and userinfo can carry credentials."""
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc.rpartition('@')[2]}{parts.path}"
+
+
+def _status(exc: urllib.error.HTTPError) -> str:
+    # The standard phrase for the code, not the server's own reason text or body.
+    return f"HTTP {exc.code} {http.client.responses.get(exc.code, '')}".rstrip()
 
 
 class HttpSink:
@@ -85,6 +97,20 @@ class HttpSink:
             raise SinkError("headers must be a mapping of strings")
         if auth is not None and not isinstance(auth, dict):
             raise SinkError("auth must be a mapping")
+        if auth is not None and auth.get("type") == "oauth2_client_credentials":
+            # client_secret is posted here, and urllib would also open file: or ftp: URLs.
+            token_url = auth.get("token_url")
+            try:
+                scheme = (
+                    urllib.parse.urlsplit(token_url).scheme if isinstance(token_url, str) else ""
+                )
+            except ValueError:
+                scheme = ""
+            if scheme != "https" and not (allow_insecure_http and scheme == "http"):
+                raise SinkError(
+                    "auth.token_url must be an https URL "
+                    "(http only with allow_insecure_http, for local testing)"
+                )
         if payload_template is not None and not isinstance(payload_template, dict):
             raise SinkError("payload_template must be a mapping")
         for name, number in (("timeout", timeout), ("backoff", backoff)):
@@ -100,7 +126,6 @@ class HttpSink:
         self.template = payload_template
         self.timeout, self.retries, self.backoff = timeout, retries, backoff
         self.dry_run = dry_run
-        self._allow_insecure = allow_insecure_http
         self._session = session
         self._sleep = sleep
         self._token: tuple[str, float] | None = None
@@ -122,15 +147,14 @@ class HttpSink:
             }
             if self.auth.get("scope"):
                 form["scope"] = self.auth["scope"]
-            token_url = self.auth["token_url"]
-            if urllib.parse.urlsplit(token_url).scheme != "https" and not self._allow_insecure:
-                raise SinkError("token_url must be https")
+            # No configured headers: they are meant for the ingest host, not the token host.
             data = self._request(
-                token_url,
+                self.auth["token_url"],  # scheme validated in __init__
                 urllib.parse.urlencode(form).encode(),
                 "application/x-www-form-urlencoded",
                 None,
                 None,
+                {},
             )
             payload = json.loads(data)
             self._token = (
@@ -142,18 +166,25 @@ class HttpSink:
 
     # ------------------------------------------------------------ transport
     def _request(
-        self, url: str, body: bytes, content_type: str, bearer: str | None, idem: str | None
+        self,
+        url: str,
+        body: bytes,
+        content_type: str,
+        bearer: str | None,
+        idem: str | None,
+        extra_headers: dict[str, str],
     ) -> bytes:
         headers = {
             "Content-Type": content_type,
             "User-Agent": f"grc-evidence/{__version__}",
-            **self.headers,
+            **extra_headers,
         }
+        where = _safe_url(url)
         if bearer:
             headers["Authorization"] = f"Bearer {bearer}"
         if idem:
             headers["Idempotency-Key"] = idem
-        last: Exception | None = None
+        last: object = None
         for attempt in range(self.retries + 1):
             req = urllib.request.Request(url, data=body, headers=headers, method="POST")  # noqa: S310 - scheme validated in __init__
             try:
@@ -161,22 +192,21 @@ class HttpSink:
                     return bytes(resp.read())
             except urllib.error.HTTPError as exc:
                 if exc.code == 429 or exc.code >= 500:
-                    last = exc
+                    last = _status(exc)
                     hinted = _retry_after(exc)
                     delay = hinted if hinted is not None else self.backoff * (2**attempt)
                 else:
-                    detail = exc.read()[:200].decode("utf-8", "replace")
-                    raise SinkError(f"POST {url} rejected: HTTP {exc.code} {detail}") from exc
+                    raise SinkError(f"POST {where} rejected: {_status(exc)}") from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 last = exc
                 delay = self.backoff * (2**attempt)
             except ValueError as exc:
                 # http.client quotes an invalid header value (possibly the bearer token) in its
                 # message, so report the type only and drop the chained exception.
-                raise SinkError(f"POST {url} could not be sent: {type(exc).__name__}") from None
+                raise SinkError(f"POST {where} could not be sent: {type(exc).__name__}") from None
             if attempt < self.retries:
                 self._sleep(delay)
-        raise SinkError(f"POST {url} failed after {self.retries + 1} attempts: {last}")
+        raise SinkError(f"POST {where} failed after {self.retries + 1} attempts: {last}")
 
     # -------------------------------------------------------------- payloads
     def _wrap(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -211,7 +241,7 @@ class HttpSink:
                 raise SinkError(
                     f"payload is {len(body)} bytes (> {MAX_BODY_BYTES}); use format: per_evidence"
                 )
-            self._request(self.url, body, "application/json", bearer, key)
+            self._request(self.url, body, "application/json", bearer, key, self.headers)
         return len(payloads)
 
 
