@@ -83,3 +83,17 @@ def test_no_write_actions_granted_for_collection():
         if action == "iam:GenerateCredentialReport":
             continue  # generates a report; does not change configuration
         assert not verb.startswith(write_verbs), action
+
+
+def test_auditor_access_is_opt_in_and_scoped():
+    # Every auditor grant sits in a dynamic block that an empty auditor_principal_arns removes.
+    text = "".join((TF / f).read_text(encoding="utf-8") for f in ("main.tf", "signing.tf"))
+    gate = r"for_each = length\(var\.auditor_principal_arns\) > 0 \? \[1\] : \[\]\s+content \{\s+"
+    grants = dict(re.findall(r'sid\s+= "(Auditor\w+)"\s+actions\s+= \[([^\]]+)\]', text))
+    assert grants == {
+        "AuditorDecryptEvidence": '"kms:Decrypt"',
+        "AuditorReadEvidence": '"s3:GetObject"',
+        "AuditorListEvidence": '"s3:ListBucket"',
+        "AuditorVerifySignatures": '"kms:Verify", "kms:GetPublicKey"',
+    }
+    assert set(re.findall(gate + r'sid\s+= "(Auditor\w+)"', text)) == set(grants)
