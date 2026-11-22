@@ -58,8 +58,8 @@
   ],
   "provider": "aws",
   "region": "us-east-1",
-  "schema_version": "1.0",
-  "sha256": "95675371d70f85b7e112d7a683ec547dbeb86cc18a24e9207b87cd9be9cc25d2",
+  "schema_version": "2.0",
+  "sha256": "a1e541d2de7ba016478033caf62d5ccc8cba9dd007819a0724557f81901e45d3",
   "status": "fail",
   "summary": "2 security group(s) examined; 1 expose sensitive ports to the internet",
   "title": "Security groups open to the internet"

@@ -1,6 +1,6 @@
 # SOC 2 (Trust Services Criteria): control evidence status
 
-Run `20260920T060000Z-1ed7bd13` (2026-09-20T06:00:00+00:00), accounts: 123456789012
+Run `20260920T060000000000Z-1ed7bd13` (2026-09-20T06:00:00+00:00), accounts: 123456789012
 
 **Read this as a triage view, not an audit conclusion.** Automated evidence shows configuration state at collection time; control effectiveness is the auditor's judgement. `error` means the check could not run (for example, missing permissions) and is *not* a pass.
 

@@ -37,7 +37,7 @@ Built for the "evidence, not screenshots" problem: a crosswalk in the spirit of 
 | **Judged against what** | Each manifest records the thresholds (`parameters`), the collectors that ran, the tool version and a hash of the effective config, so a `pass` can be tied to the bar it was judged against. |
 | **Failures are visible** | A check that cannot run (denied, throttled, service error, account not assumable) becomes an `error` record, never a silent pass, and an account that cannot be assumed turns every control `error` in the rollup. A run with any error record, or a failed delivery, raises after delivery so the Lambda error alarm fires. A scheduled run that never starts trips a separate missed-run alarm. |
 | **Multi-account** | Assumes a read-only role in each member account with an `ExternalId`. Terraform for the collector and for the member-account role. GovCloud/China ARN partitions are handled. |
-| **Sinks** | Local files, S3 (SSE-KMS), and a generic HTTP ingestion sink (bearer or OAuth2 client-credentials, retries, idempotency keys, no redirect following). |
+| **Sinks** | Local files, S3 (SSE-KMS, conditional writes that never overwrite), and a generic HTTP ingestion sink (bearer or OAuth2 client-credentials, retries, idempotency keys, no redirect following). [What to know](#sinks). |
 | **Infrastructure** | [Terraform](deploy/terraform): Lambda, EventBridge schedule, KMS-encrypted versioned bucket (Object Lock in `COMPLIANCE` mode by default, with `object_lock_days` required), least-privilege IAM, error and missed-run alarms. |
 
 ## Quick start
@@ -65,10 +65,25 @@ A collected record ([sample](docs/sample-evidence.json), [sample SOC 2 rollup](d
   "status": "fail",
   "summary": "2 security group(s) examined; 1 expose sensitive ports to the internet",
   "controls": {"soc2": ["CC6.6"], "iso27001": ["A.8.20", "A.8.22"], "nist_800_53": ["SC-7"], "fedramp_20x": ["KSI-CNA-MAT", "KSI-CNA-RNT", "KSI-CNA-ULN"]},
-  "findings": [{"resource": "sg-e70e... (legacy-bastion)", "message": "Port 22/tcp open to the internet", "severity": "high"}],
-  "sha256": "639dd515fc0567bc2a89e2c63605b43b5adbca3d1efc7a47d5ae1672b5b8e6b1"
+  "findings": [{"resource": "sg-e70e730ea5b4180c0 (legacy-bastion)", "message": "Port 22/tcp open to the internet", "severity": "high"}],
+  "schema_version": "2.0",
+  "sha256": "a1e541d2de7ba016478033caf62d5ccc8cba9dd007819a0724557f81901e45d3"
 }
 ```
+
+The block above leaves out `provider`, `title`, `collected_at` and `data`, which the hash covers, so it's the hash of the full [sample file](docs/sample-evidence.json), not of these lines.
+
+### Command reference
+
+| Command | Flags | Exit codes |
+|---|---|---|
+| `collect` | `--config FILE` (YAML; without it: the current credentials' account, `us-east-1`, every collector). `--output DIR` writes to a local directory and replaces the config's sinks. `--only a,b` runs only those collector ids (it replaces `collectors.include`; `exclude` still applies). `--regions a,b` replaces the top-level `regions` (an account's own `regions` list still wins). `--dry-run` collects and prints but builds no sinks and writes nothing. `--fail-on-findings` exits 1 when any record is `fail` or `error`. | `0` delivered. `1` with `--fail-on-findings`, a record is `fail` or `error`. `2` config, input, signing or chain-read error, or no sink configured. `3` a sink failed (reported ahead of `1`). |
+| `verify` | `--key-id ARN`, `--skip-signature` (see [Integrity](#integrity-signing-chain-and-verify)) | `0` verified. `1` a problem was found. `2` the input couldn't be read. |
+| `report` | `--framework`, `--format markdown\|json`, `--no-verify` | `0` rendered. `1` the run's hashes don't verify, nothing rendered. `2` the input couldn't be read. |
+| `coverage` | `--framework`, `--format text\|markdown`, `--check` validates the crosswalk only | `0`, or `1` when `--check` finds a mapping problem. |
+| `collectors`, `permissions` | `collectors --format text\|markdown` | `0` |
+
+`report` checks the run's record and manifest hashes before it renders, and refuses a run that fails. `--no-verify` renders it anyway with a warning on stderr. It doesn't check signatures or the chain; that's `verify`. A `--dry-run` with `signing` configured still calls `kms:Sign`, because the manifest is signed before delivery. A bad command line exits 2 (argparse).
 
 ## Configuration
 
@@ -99,7 +114,15 @@ sinks:
     auth: {type: bearer, token: "secretsmanager:grc/ingest-token"}
 ```
 
-Unknown keys are errors. Secrets are references (`env:`, `secretsmanager:`, `ssm:`), and bare literals are rejected so credentials cannot end up in the config file. In the Lambda, `ssm:` references work only when their ARNs are passed as `ssm_parameter_arns` (and their KMS keys as `ssm_kms_key_arns`) to the Terraform module.
+Unknown keys are errors at the top level, in each `accounts` entry, in `collectors`, `parameters` and `signing`, and in the options of an `s3` or `http` sink. Three places aren't checked, so a typo there is silently ignored: extra keys under `gcp`, extra keys inside an HTTP sink's `auth` block, and extra keys on a `local` sink. Secrets are references (`env:`, `secretsmanager:`, `ssm:`), and bare literals are rejected so credentials cannot end up in the config file. In the Lambda, `ssm:` references work only when their ARNs are passed as `ssm_parameter_arns` (and their KMS keys as `ssm_kms_key_arns`) to the Terraform module.
+
+### Sinks
+
+- **The chain comes from the first `local` or `s3` sink only.** The previous run is read from that one sink, in the order the sinks are listed, and every sink receives the same manifest. A config with only an `http` sink has nowhere to read from, so every run is written as a genesis (`previous: null`) with no warning, and there's no chain to verify. Add an `s3` or `local` sink if you need the chain.
+- **`kms_key_id` is required for the Terraform module's bucket.** Without it the S3 sink writes with SSE-S3 (`AES256`), and the module's bucket policy denies any write that isn't SSE-KMS under its own key ARN. A bucket without that policy accepts SSE-S3.
+- **The layouts differ.** The local sink writes `<path>/<run_id>/`. The S3 sink writes `<prefix>/dt=YYYY-MM-DD/<run_id>/`, where the date is the run's UTC start date. Each run directory holds one JSON file per record and `manifest.json`, written last. `verify` and `report` read both layouts.
+- **S3 writes never overwrite.** Each put is conditional (`If-None-Match: *`), so sending the same run to the same prefix twice fails. Set `expected_bucket_owner: "111111111111"` (quoted) to refuse a bucket of the same name owned by another account.
+- **HTTP sink.** `headers` are sent only to the ingest URL, never to the OAuth2 `token_url`, which must be `https`. A URL with userinfo (`user:pass@host`) is rejected. The query string isn't inspected, so don't put a token there; use `auth`.
 
 ### Integrity: signing, chain and verify
 
@@ -118,6 +141,10 @@ grc-evidence verify s3://my-evidence-bucket/evidence --key-id <signing_key_arn>
 
 `--key-id` pins the key that must have signed every run. An unsigned run fails, a run signed with any other key fails, and a store with no signed run fails. Without it, `verify` checks each signature against the key named in the manifest, says the key wasn't pinned, and counts unsigned runs. That checks consistency but doesn't prove where the runs came from, so auditors should always pin. `--skip-signature` checks hashes and the chain only, for when you have no KMS access. Manifests written before schema 2.0 are reported as legacy and don't fail. Read [the threat model](docs/ARCHITECTURE.md#integrity-and-threat-model) before relying on this: a hash alone stops nothing deliberate, and the collector's own role can sign.
 
+**The signing key.** It is an asymmetric KMS key, and KMS can't rotate asymmetric keys automatically, so the same key signs for the life of the store. `verify` checks signatures by calling `kms:Verify`; there's no offline check. If the key is deleted (or disabled), every past signature becomes unverifiable. The Terraform module sets `prevent_destroy` on it, so Terraform refuses to delete it, but that doesn't stop a deletion made in the console or the API.
+
+**What an auditor needs for `verify s3://bucket/prefix --key-id <arn>`:** `s3:ListBucket` on the bucket (for the evidence prefix), `s3:GetObject` on the objects under it, and `kms:Verify` on the signing key. Those are the only calls the command makes. Because the module's bucket is SSE-KMS, S3 also requires `kms:Decrypt` on the evidence key to return the objects. With `--skip-signature` no KMS signing-key access is needed. The command downloads every object under the prefix to a temporary directory. [Details](docs/ARCHITECTURE.md#auditor-access-for-verify).
+
 ### FIPS endpoints
 
 `use_fips_endpoint` (default `true`) makes the AWS clients use FIPS 140 validated endpoints: collectors, STS role assumption, the S3 sink, and `secretsmanager:`/`ssm:` secret lookups. Not every service has a FIPS endpoint in every region, and only the clients covered by the FIPS unit tests are verified; check the endpoints for your regions before relying on this for a FedRAMP boundary. Configure only US regions in `regions`; nothing enforces this. The HTTP sink's TLS and the SHA-256 hashing run on the Python runtime's OpenSSL, which this project does not claim is FIPS-validated.
@@ -127,8 +154,11 @@ One call needed a workaround: in the commercial partition, S3's `ListBuckets` ha
 ## Deploy
 
 ```bash
+python -m pip install --require-hashes -r requirements/requirements-dev.txt   # the hash-locked build backend; the zip is built without build isolation
 python scripts/build_lambda.py                      # dist/grc-evidence-lambda.zip (Linux wheels for the Lambda runtime)
 ```
+
+The zip's one third-party dependency (PyYAML) is installed from `requirements/requirements-lambda.txt` with `--require-hashes`, and the zip is reproducible: the same sources give the same bytes.
 
 ```hcl
 module "grc_evidence" {
@@ -156,6 +186,14 @@ module "reader_prod" {                               # applied in each member ac
 
 Invoke once with `{"dry_run": true}` to check that the collectors can read their resources. A dry run builds no sinks, so it does not test `s3:PutObject`, the chain read, or secret lookups, and it logs counts only, not which collector failed. Before the first schedule, run a real invocation against a test prefix and check the delivered objects. The IAM policy is exactly the read-only action list the collectors use; `grc-evidence permissions` prints it and a test fails if the Terraform drifts from it. See [deploy/terraform/README.md](deploy/terraform/README.md). For a real deployment into a live AWS account, proving the module, the Lambda and the S3/KMS delivery path all actually work, plus a real deployability bug it found and fixed, see [`docs/live-deployment-verification.md`](docs/live-deployment-verification.md).
 
+### Lambda reference
+
+- **Configuration** is the `GRC_CONFIG` environment variable: JSON, same schema as the YAML file. The module builds it from `collector_config`, adds the S3 sink, `extra_sinks`, `use_fips_endpoint` and the signing key.
+- **Event keys.** `{"collectors": ["aws.cloudtrail"]}` runs only those collectors for that invocation. `{"dry_run": true}` collects and writes nothing. `{"config": {...}}` is rejected unless the function has `GRC_ALLOW_EVENT_CONFIG=true`; leave that off. The scheduled event carries none of these.
+- **Config size.** Lambda limits all of a function's environment variables to 4 KB in total, and it rejects a function whose variables are larger, so `terraform apply` fails. `GRC_CONFIG` is the only place the handler reads its configuration from, so a large multi-account config has to be made smaller: lean on the top-level `regions` and the defaults, or split the accounts across more than one deployment.
+- **Timeout and memory** are fixed in the module at 900 seconds (the Lambda maximum) and 512 MB. Collectors run one after another, so run time grows with accounts × regions × regional collectors (global collectors run once per account). Evidence is delivered only after every collector has finished: a run that hits the timeout writes nothing and shows up as a Lambda error. Size the account list per deployment with that in mind, and time a real run before scheduling.
+- **A failed run** (a sink failure, or any `error` record) raises after delivery so the error alarm fires. It is not retried; the next scheduled run is the retry.
+
 ## Delivering to a GRC platform
 
 The HTTP sink is intentionally vendor-neutral. It POSTs this project's JSON schema to a URL you configure and handles auth, retries, idempotency and safe redirect behaviour. GRC platforms differ in endpoint and payload shape, so you either wrap fields with `payload_template` or put a small adapter in front. **The sink has not been verified against any specific vendor's API**; see [docs/INGESTION.md](docs/INGESTION.md) for the contract and what to check before pointing it at one.
@@ -171,7 +209,12 @@ The HTTP sink is intentionally vendor-neutral. It POSTs this project's JSON sche
 
 ## Limitations
 
+- GCP collectors run from the CLI only. The Lambda artifact doesn't package the google-cloud libraries, and the handler refuses a config with `gcp.projects`.
 - GCP collectors are unit-tested against fakes shaped like the `google-cloud-storage` / `google-cloud-compute` objects and have not been run against a live project by this repo's CI.
+- `aws.iam_privileged_access` doesn't analyse role trust policies, so it doesn't say who can assume an administrator-equivalent role. It doesn't treat `iam:PassRole` or login-profile actions as escalation paths, doesn't subtract explicit Deny statements, and doesn't evaluate SCPs or conditions.
+- `aws.network_exposure` judges security-group rules for all protocols (`-1`) and TCP. UDP and other protocols on sensitive ports aren't checked. It parses source ranges with Python's `ipaddress` and collapses them per IP family, so a non-canonical form (`0::/0`) or a range split into halves (`0.0.0.0/1` plus `128.0.0.0/1`) counts as internet-open. A range that covers most of the internet but not all of it isn't flagged. `gcp.firewall_exposure` has the same limits.
+- The hash chain can fork if two runs overlap against one store: both link to the same predecessor and `verify` reports it. Keep the Lambda's reserved concurrency at 1 and don't run `collect` in parallel against one store.
+- The chain is read from the first `local` or `s3` sink only; an HTTP-only config has no chain (see [Sinks](#sinks)).
 - AWS collectors are tested against [moto](https://github.com/getmoto/moto). moto does not model everything (for example `GetBucketPolicyStatus` evaluation), so those paths use stub clients.
 - Resource inspection is capped per collector per region (`max_items_per_check`, default 500) and records say when they were truncated.
 - Single-region checks use the region list you configure; add every region you use, including ones you think are empty (GuardDuty and Config gaps live there).
@@ -182,7 +225,7 @@ The HTTP sink is intentionally vendor-neutral. It POSTs this project's JSON sche
 
 ```bash
 pip install -e ".[dev]"
-ruff check src tests scripts && ruff format --check src tests scripts
+ruff check src tests fuzz scripts && ruff format --check src tests fuzz scripts
 mypy src
 pytest --cov=grcevidence
 terraform -chdir=deploy/terraform fmt -check -recursive

@@ -107,7 +107,7 @@ aws.eks_security:
   nist_800_53: [AU-2, AU-12, SC-7, SC-28]
   fedramp_20x: [KSI-CNA-MAT, KSI-CNA-RNT, KSI-MLA-LET, KSI-SVC-SIN]
 aws.backups:
-  soc2: [A1.2, A1.3]
+  soc2: [A1.2]
   iso27001: [A.5.30, A.8.13]
   nist_800_53: [CP-9]
   fedramp_20x: [KSI-RPL-ABO]
