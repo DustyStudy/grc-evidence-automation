@@ -201,6 +201,26 @@ data "aws_iam_policy_document" "bucket" {
       values   = ["aws:kms"]
     }
   }
+
+  # aws:kms alone would let S3 fall back to the AWS-managed aws/s3 key. A missing key-id header
+  # also fails StringNotEquals, so every upload must name the CMK by ARN (an alias is denied).
+  statement {
+    sid       = "DenyWrongKmsKey"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.evidence.arn}/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = [aws_kms_key.evidence.arn]
+    }
+  }
 }
 
 resource "aws_s3_bucket_policy" "evidence" {

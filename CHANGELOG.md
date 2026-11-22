@@ -14,6 +14,8 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 - `docs/ARCHITECTURE.md` has a threat model: what the hash, signature, chain, Object Lock and versioning each stop, and what they don't.
 
 ### Fixed
+- **The evidence bucket refuses writes that do not use its CMK.** The bucket policy denies `s3:PutObject` unless the key id is this stack's key ARN, so an upload under the AWS-managed `aws/s3` key, or under an alias, is denied. CLI users who wrote an alias in `kms_key_id` for this bucket must switch to the key ARN.
+- **GCP firewall check sees IPv6 and numeric TCP.** A rule open to `::/0`, or one that uses protocol `6`, is now a finding, as it already was for `0.0.0.0/0` and `tcp`.
 - **An account that cannot be assumed no longer reads as pass.** Its `aws.account_access` error now makes every control `error` in the rollup, instead of being invisible while the other accounts' passes show.
 - **A run with error records now fails the Lambda invocation** after delivery, so the error alarm fires. Previously an all-error run returned success.
 - **A sink that raises any exception** (not only `SinkError`/`ValueError`, for example an unreadable secret or a `KeyError` in the HTTP auth block) is recorded as failed, and later sinks still receive the evidence.

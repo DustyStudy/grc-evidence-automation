@@ -99,28 +99,33 @@ class GcpFirewallExposure(Collector):
         findings: list[Finding] = []
         resources: list[dict[str, Any]] = []
         for fw in rules:
+            ranges = {str(r).strip() for r in getattr(fw, "source_ranges", [])}
+            # Named in the finding text; identical to the old wording for IPv4 rules.
+            src = " and ".join(r for r in ("0.0.0.0/0", "::/0") if r in ranges)
             open_to_internet = (
                 not getattr(fw, "disabled", False)
                 and str(getattr(fw, "direction", "INGRESS")).upper() == "INGRESS"
-                and "0.0.0.0/0" in list(getattr(fw, "source_ranges", []))
+                and bool(src)
             )
             all_protocols = sensitive_tcp = False
             for allowed in getattr(fw, "allowed", []) if open_to_internet else []:
                 proto = str(
                     getattr(allowed, "I_p_protocol", None) or getattr(allowed, "ip_protocol", "")
-                ).lower()
+                ).lower()  # GCP also accepts the IANA number: "6" is tcp
                 ports = [str(p) for p in getattr(allowed, "ports", [])]
                 if proto == "all":
                     all_protocols = True
                     findings.append(
-                        Finding(fw.name, "Allows ALL protocols from 0.0.0.0/0", Severity.CRITICAL)
+                        Finding(fw.name, f"Allows ALL protocols from {src}", Severity.CRITICAL)
                     )
-                elif proto == "tcp" and (not ports or any(_port_hits(p, sensitive) for p in ports)):
+                elif proto in ("tcp", "6") and (
+                    not ports or any(_port_hits(p, sensitive) for p in ports)
+                ):
                     sensitive_tcp = True
                     findings.append(
                         Finding(
                             fw.name,
-                            "Allows sensitive tcp ports (or all ports) from 0.0.0.0/0",
+                            f"Allows sensitive tcp ports (or all ports) from {src}",
                             Severity.HIGH,
                         )
                     )
