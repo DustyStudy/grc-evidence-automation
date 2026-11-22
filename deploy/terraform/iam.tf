@@ -143,6 +143,26 @@ data "aws_iam_policy_document" "function" {
       resources = var.secret_arns
     }
   }
+
+  dynamic "statement" {
+    for_each = length(var.ssm_parameter_arns) > 0 ? [1] : []
+
+    content {
+      sid       = "ReadSinkParameters"
+      actions   = ["ssm:GetParameter"]
+      resources = var.ssm_parameter_arns
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.ssm_kms_key_arns) > 0 ? [1] : []
+
+    content {
+      sid       = "DecryptSinkParameters"
+      actions   = ["kms:Decrypt"]
+      resources = var.ssm_kms_key_arns
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "function" {

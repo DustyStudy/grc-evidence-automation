@@ -319,16 +319,24 @@ class ControlStatus:
 
 
 def rollup(evidence: list[Evidence], framework: str) -> list[ControlStatus]:
-    """Status per control: fail > error > pass > not_applicable; none -> no_automated_evidence."""
+    """Status per control: fail > error > pass > not_applicable; none -> no_automated_evidence.
+
+    An ``aws.account_access`` error applies to every control.
+    """
     if framework not in FRAMEWORKS:
         raise ValueError(f"unknown framework {framework!r}; choose from {list(FRAMEWORKS)}")
     by_control: dict[str, list[Evidence]] = {}
     for ev in evidence:
         for cid in ev.controls.get(framework, []):
             by_control.setdefault(cid, []).append(ev)
+    # An account that could not be accessed was checked for nothing, so its error counts against
+    # every control: the other accounts' passes must not read as a pass for the whole run.
+    blocked = [
+        e for e in evidence if e.collector == "aws.account_access" and e.status == Status.ERROR
+    ]
     rows: list[ControlStatus] = []
     for cid, meta in controls()[framework].items():
-        evs = by_control.get(cid, [])
+        evs = by_control.get(cid, []) + blocked
         statuses = {e.status for e in evs}
         if not evs:
             status = NO_EVIDENCE

@@ -3,10 +3,10 @@
 ## Flow
 
 1. **Trigger.** EventBridge invokes the Lambda on a schedule (or you run `grc-evidence collect`).
-2. **Scope.** For each configured account the runner assumes a read-only role (`ExternalId` enforced), confirms the account id from `sts:GetCallerIdentity`, and selects collectors. *Global* collectors (IAM, S3 listing, CloudTrail) run once per account. *Regional* collectors run for every configured region.
+2. **Scope.** For each configured account the runner assumes a read-only role (sending `ExternalId` when one is configured; the member-account role's trust policy requires one), confirms the account id from `sts:GetCallerIdentity`, and selects collectors. *Global* collectors (IAM, S3 listing, CloudTrail) run once per account. *Regional* collectors run for every configured region.
 3. **Collect.** Each collector returns a `Result` (summary, findings, sanitized facts). The base class converts it into an `Evidence` record, attaches the control crosswalk, and seals it with a SHA-256.
 4. **Manifest.** The run gets a manifest listing every record and its hash, what the run was judged against, and a link to the previous run. The manifest is sealed with a SHA-256 and, when `signing.kms_key_id` is set, that hash is signed with an asymmetric KMS key. See [Integrity and threat model](#integrity-and-threat-model).
-5. **Deliver.** Every sink is attempted, so one failing sink does not block the others. If any sink failed, the Lambda raises after all sinks have been tried, so the error alarm fires.
+5. **Deliver.** Every sink is attempted, so one failing sink does not block the others. If any sink failed, the Lambda raises after all sinks have been tried. It also raises after delivery when any record has status `error`, so the error alarm fires for a run that collected nothing usable. The evidence is still delivered in that case.
 
 ## Evidence record
 
@@ -60,11 +60,11 @@ It does **not** stop a principal that can call `kms:Sign` on the key. In the Ter
 
 The lookup only considers runs whose `run_id` sorts before the new run, and skips a manifest it cannot parse. A writer who plants a future-dated or malformed manifest therefore can't block collection forever (under Object Lock the planted object could never be removed). The planted run is still reported by `verify`: an unreadable manifest, or a link that skips a run. Read and permission errors still fail the run.
 
-Run ids start with a UTC timestamp to the microsecond, so back-to-back runs sort in the order they started. Overlapping runs against the same store both link to the same predecessor and show as a fork; the Lambda's concurrency of 1 prevents that, so don't run `collect` in parallel against one store.
+Run ids start with a UTC timestamp to the microsecond, so back-to-back runs sort in the order they started. Overlapping runs against the same store both link to the same predecessor and show as a fork; the Lambda's default reserved concurrency of 1 prevents that, so don't run `collect` in parallel against one store, and don't remove the reserved concurrency limit in Terraform.
 
 It does **not** detect truncation: deleting the newest run(s) leaves nothing pointing at them. Deleting the oldest runs looks the same as lifecycle expiry, so a missing predecessor of the first run in view is a note, not a failure. Without signatures, a writer can recompute the whole chain from the rewritten run forward. With signatures they would have to re-sign every later run, which needs `kms:Sign` and leaves one CloudTrail event per forged run.
 
-**S3 Object Lock.** In `COMPLIANCE` mode no one, including the account root user, can overwrite or delete an object version until its retention ends. This is the layer that *prevents* deletion and truncation, which the other layers can at best detect. `GOVERNANCE` mode can be bypassed by anyone with `s3:BypassGovernanceRetention`, so use `COMPLIANCE` for audit evidence. Object Lock must be enabled when the bucket is created. The module default stays off (`object_lock_days = 0`) because turning it on for an existing bucket makes Terraform replace the bucket. Object Lock does not stop someone writing additional objects (for example a fabricated run under a new key); the chain and the signature catch those.
+**S3 Object Lock.** In `COMPLIANCE` mode no one, including the account root user, can overwrite or delete an object version until its retention ends. This is the layer that *prevents* deletion and truncation, which the other layers can at best detect. `GOVERNANCE` mode can be bypassed by anyone with `s3:BypassGovernanceRetention`, so use `COMPLIANCE` for audit evidence. Object Lock must be enabled when the bucket is created. The module requires `object_lock_days` to be set explicitly (no default; `0` turns Object Lock off), and `object_lock_mode` defaults to `COMPLIANCE`. Turning Object Lock on for an existing bucket makes Terraform replace the bucket, so decide before the bucket is created. Object Lock does not stop someone writing additional objects (for example a fabricated run under a new key); the chain and the signature catch those.
 
 **Versioning.** Keeps every overwritten or deleted version, so a change is recoverable and visible in the version history. Without Object Lock, anyone with `s3:DeleteObjectVersion` can purge old versions. `verify s3://...` checks current versions only.
 
@@ -83,7 +83,7 @@ Production settings: signing on (the module default), `object_lock_mode = "COMPL
 
 ## Decisions
 
-**`error` is not `pass`.** Auditors care about the difference between "we checked and it was fine" and "we could not check". Access-denied, throttling and API failures produce an `error` record with the reason, control rollups treat `error` as incomplete evidence, and a run that cannot assume a member-account role produces an explicit `aws.account_access` error rather than nothing.
+**`error` is not `pass`.** Auditors care about the difference between "we checked and it was fine" and "we could not check". Access-denied, throttling and API failures produce an `error` record with the reason, control rollups treat `error` as incomplete evidence, and a run that cannot assume a member-account role produces an explicit `aws.account_access` error rather than nothing. That account error makes every control `error` in the rollup, so a passing account cannot make a control look compliant on its own.
 
 **Read-only by construction.** Collectors call only `Describe*`/`Get*`/`List*` style APIs (plus `iam:GenerateCredentialReport`, which creates a report but changes no configuration). A test compares each collector's declared permissions with the Terraform policy in both directions and rejects write-style verbs, so the IAM policy cannot silently grow or shrink away from the code.
 
@@ -101,7 +101,9 @@ Production settings: signing on (the module default), `object_lock_mode = "COMPL
 
 **Fail closed on integrity.** If signing is configured and `kms:Sign` fails, or the previous run cannot be read, the run fails (and the error alarm fires) instead of delivering an unsigned or unchained manifest. The next scheduled run retries.
 
-**Lambda concurrency = 1.** Overlapping runs would double-report the same evidence period, and both would chain to the same predecessor, which `verify` reports as a fork.
+**Lambda concurrency = 1 by default.** Overlapping runs would double-report the same evidence period, and both would chain to the same predecessor, which `verify` reports as a fork. The reserved-concurrency variable is configurable for accounts with quota limits, and the Terraform module's default keeps it at 1.
+
+**No automatic retries.** EventBridge invokes the Lambda asynchronously, and the module sets `maximum_retry_attempts = 0`. A retry of a run that partly succeeded writes a second, chained run for the same period. The next scheduled run is the retry.
 
 ## Extending
 

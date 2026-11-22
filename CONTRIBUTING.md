@@ -22,7 +22,7 @@ grc-evidence coverage --format markdown > docs/coverage.md
 grc-evidence collectors --format markdown > docs/collectors.md
 ```
 
-CI also runs the tests on Windows and macOS and on Python 3.11 to 3.13, with a 90% coverage floor, and builds the package. Add a line to `CHANGELOG.md` under "Unreleased" for user-visible changes.
+CI runs the tests on Linux on Python 3.11 to 3.13, and on Windows and macOS on Python 3.11 and 3.12, with a 90% coverage floor, and builds the package. Add a line to `CHANGELOG.md` under "Unreleased" for user-visible changes.
 
 ## Pinned CI dependencies
 

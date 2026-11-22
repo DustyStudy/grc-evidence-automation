@@ -78,6 +78,29 @@ variable "secret_arns" {
   description = "Secrets Manager ARNs the function may read (for http sink credentials)."
   type        = list(string)
   default     = []
+  sensitive   = true
+}
+
+variable "ssm_parameter_arns" {
+  description = "SSM Parameter Store parameter ARNs the function may read (ssm:GetParameter), for sink auth references of the form ssm:/path."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.ssm_parameter_arns : startswith(arn, "arn:")])
+    error_message = "Each ssm_parameter_arns entry must be a full ARN (starting with \"arn:\")."
+  }
+}
+
+variable "ssm_kms_key_arns" {
+  description = "Customer-managed KMS key ARNs the function may use to decrypt (kms:Decrypt) SecureString parameters listed in ssm_parameter_arns, for sink auth references. Not needed for parameters encrypted with the AWS-managed aws/ssm key."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.ssm_kms_key_arns : startswith(arn, "arn:")])
+    error_message = "Each ssm_kms_key_arns entry must be a full ARN (starting with \"arn:\")."
+  }
 }
 
 variable "evidence_expiration_days" {
@@ -87,15 +110,19 @@ variable "evidence_expiration_days" {
 }
 
 variable "object_lock_days" {
-  description = "If > 0, create the bucket with S3 Object Lock and apply this default retention. Cannot be enabled on an existing bucket."
+  description = "Required, no default. If > 0, create the bucket with S3 Object Lock and apply this default retention in days. 0 is an explicit opt-out (no Object Lock). Cannot be enabled on an existing bucket."
   type        = number
-  default     = 0
+
+  validation {
+    condition     = var.object_lock_days >= 0 && floor(var.object_lock_days) == var.object_lock_days
+    error_message = "object_lock_days must be a whole number >= 0 (0 disables Object Lock)."
+  }
 }
 
 variable "object_lock_mode" {
-  description = "GOVERNANCE (can be bypassed with special permission) or COMPLIANCE (cannot be shortened or removed by anyone)."
+  description = "Object Lock retention mode. COMPLIANCE (the default): retention cannot be shortened or removed by anyone, including the account root user, until it expires. GOVERNANCE: can be bypassed by principals holding s3:BypassGovernanceRetention. Ignored when object_lock_days is 0."
   type        = string
-  default     = "GOVERNANCE"
+  default     = "COMPLIANCE"
 
   validation {
     condition     = contains(["GOVERNANCE", "COMPLIANCE"], var.object_lock_mode)
@@ -110,9 +137,8 @@ variable "log_retention_days" {
 }
 
 variable "alarm_actions" {
-  description = "SNS topic ARNs notified when the function errors (a failed run means a gap in evidence)."
+  description = "Required, no default. SNS topic ARNs notified when a run errors or no run starts within a day (either is a gap in evidence). Pass [] explicitly to create the alarms with no notification."
   type        = list(string)
-  default     = []
 }
 
 variable "tags" {

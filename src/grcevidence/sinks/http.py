@@ -170,6 +170,10 @@ class HttpSink:
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 last = exc
                 delay = self.backoff * (2**attempt)
+            except ValueError as exc:
+                # http.client quotes an invalid header value (possibly the bearer token) in its
+                # message, so report the type only and drop the chained exception.
+                raise SinkError(f"POST {url} could not be sent: {type(exc).__name__}") from None
             if attempt < self.retries:
                 self._sleep(delay)
         raise SinkError(f"POST {url} failed after {self.retries + 1} attempts: {last}")
