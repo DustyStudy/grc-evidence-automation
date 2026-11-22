@@ -9,6 +9,7 @@ here reads or stores a service-account key.
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
 
 from grcevidence.collectors.base import Collector, Context, Result, register, resource
@@ -99,9 +100,9 @@ class GcpFirewallExposure(Collector):
         findings: list[Finding] = []
         resources: list[dict[str, Any]] = []
         for fw in rules:
-            ranges = {str(r).strip() for r in getattr(fw, "source_ranges", [])}
-            # Named in the finding text; identical to the old wording for IPv4 rules.
-            src = " and ".join(r for r in ("0.0.0.0/0", "::/0") if r in ranges)
+            # "0.0.0.0/0" and/or "::/0", named in the finding text, when the source ranges
+            # together cover the whole family (also "0.0.0.0/1" + "128.0.0.0/1", "0::/0").
+            src = " and ".join(_internet_ranges(getattr(fw, "source_ranges", [])))
             open_to_internet = (
                 not getattr(fw, "disabled", False)
                 and str(getattr(fw, "direction", "INGRESS")).upper() == "INGRESS"
@@ -149,6 +150,17 @@ class GcpFirewallExposure(Collector):
             },
             truncated_at=cap if len(all_rules) > cap else None,
         )
+
+
+def _internet_ranges(cidrs: Any) -> list[str]:
+    """The whole-family ranges the CIDRs collapse to. A malformed CIDR raises ValueError,
+    which the base class records as ERROR rather than reading it as "not open"."""
+    nets = [ipaddress.ip_network(str(c).strip(), strict=False) for c in cidrs]
+    out: list[str] = []
+    for version in (4, 6):
+        family: list[Any] = [n for n in nets if n.version == version]
+        out += [str(n) for n in ipaddress.collapse_addresses(family) if n.prefixlen == 0]
+    return out
 
 
 def _port_hits(spec: str, sensitive: set[str]) -> bool:
