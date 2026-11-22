@@ -129,11 +129,23 @@ data "aws_iam_policy_document" "trust" {
 data "aws_iam_policy_document" "read" {
   statement {
     sid       = "ReadOnlyEvidenceCollection"
-    actions   = local.collector_read_actions
+    actions   = setsubtract(local.collector_read_actions, ["apigateway:GET"])
     resources = ["*"]
   }
 
-  # apigateway:GET on "*" would also return API key values; collectors never read them.
+  # aws.waf_coverage calls GetRestApis and GetStages only. Region is "*" because the
+  # collector runs in every configured region.
+  statement {
+    sid     = "ReadRestApiStages"
+    actions = ["apigateway:GET"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/restapis",
+      "arn:${data.aws_partition.current.partition}:apigateway:*::/restapis/*/stages",
+    ]
+  }
+
+  # Defence in depth: the allow above no longer reaches API keys, but an explicit deny also
+  # holds if another policy on this role grants apigateway:GET more widely.
   statement {
     sid     = "DenyApiKeyValues"
     effect  = "Deny"

@@ -23,9 +23,26 @@ sinks:
 **`bundle`**: one POST per run:
 
 ```json
-{"run": {"run_id": "...", "started_at": "...", "accounts": ["..."], "counts": {"pass": 9, "fail": 3}, "evidence": [{"id": "...", "file": "...", "status": "...", "sha256": "..."}], "sha256": "..."},
+{"run": {
+   "run_id": "20261120T060000123456Z-1a2b3c4d",
+   "started_at": "2026-11-20T06:00:00+00:00",
+   "finished_at": "2026-11-20T06:03:10+00:00",
+   "tool_version": "...",
+   "accounts": ["111111111111"],
+   "counts": {"pass": 9, "fail": 3},
+   "evidence": [{"id": "aws.cloudtrail/111111111111/us-east-1", "file": "aws.cloudtrail__111111111111__us-east-1.json", "status": "pass", "sha256": "..."}],
+   "collectors": ["aws.cloudtrail", "..."],
+   "parameters": {"max_access_key_age_days": 90, "sensitive_ports": [22, 3389], "...": "..."},
+   "config_sha256": "...",
+   "previous": {"run_id": "20261119T060000123456Z-9f8e7d6c", "sha256": "..."},
+   "schema_version": "2.0",
+   "sha256": "...",
+   "signature": {"key_id": "arn:aws:kms:us-east-1:111111111111:key/...", "algorithm": "ECDSA_SHA_256", "value": "<base64>"}
+ },
  "evidence": [ { ...evidence record... } ]}
 ```
+
+`run` is the whole run manifest. Values are abbreviated here; `previous` is `null` for a first run (and always, when the HTTP sink is the only sink) and `signature` is `null` when signing is off. See [the manifest section of ARCHITECTURE.md](ARCHITECTURE.md#run-manifest-schema-20) for each field.
 
 **`per_evidence`**: one POST per record (use this if a bundle would exceed the endpoint's size limit; the sink refuses payloads over 5 MB):
 
@@ -35,9 +52,11 @@ sinks:
 
 **Headers.** `Authorization: Bearer <token>`, `Idempotency-Key: <sha256 of the payload's record or manifest>` (a retried POST is byte-for-byte the same, so the receiver can de-duplicate), `Content-Type: application/json`.
 
-**OAuth2 client credentials.** When configured, the sink first POSTs `grant_type=client_credentials` (plus `scope` if set) to `token_url`, expects `{"access_token": "...", "expires_in": N}`, and caches the token until shortly before it expires. `client_id` and `client_secret` are secret references.
+**OAuth2 client credentials.** When configured, the sink first POSTs `grant_type=client_credentials` (plus `scope` if set) to `token_url`, expects `{"access_token": "...", "expires_in": N}`, and caches the token until shortly before it expires. `client_id` and `client_secret` are secret references. `token_url` must be `https` and is checked when the config is loaded. The static `headers` are not sent on the token request, only on the ingest POST.
 
-**Failure behavior.** 429 and 5xx retry with exponential backoff (honoring `Retry-After` up to 60 s). Other 4xx fail immediately with the status and the start of the response body. Redirects are never followed. A sink failure does not stop other sinks, and it makes the Lambda invocation fail so the alarm fires.
+**URLs.** A URL with userinfo (`user:pass@host`) is rejected. The query string is not inspected and is sent as written, so keep tokens out of it and use `auth`. `headers` values are literal strings, not secret references.
+
+**Failure behavior.** 429 and 5xx retry with exponential backoff (honoring `Retry-After` up to 60 s). Other statuses, including 3xx, fail immediately. The error names the scheme, host and path and the status code; it does not include the query string or the response body. Redirects are never followed. A sink failure does not stop other sinks, and it makes the Lambda invocation fail so the alarm fires.
 
 ## Adapting to a specific platform
 

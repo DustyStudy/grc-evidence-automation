@@ -36,8 +36,23 @@ def test_both_modules_share_one_action_list():
 
 
 @pytest.mark.parametrize("tf_file", [TF / "iam.tf", TF / "reader_role" / "main.tf"])
+def test_apigateway_get_is_scoped_to_rest_apis_and_stages(tf_file):
+    # apigateway:GET covers every API Gateway read, so it must not ride on the "*" statement.
+    text = tf_file.read_text(encoding="utf-8")
+    assert 'setsubtract(local.collector_read_actions, ["apigateway:GET"])' in text
+    assert not re.search(r"actions\s*=\s*local\.collector_read_actions\b", text)
+    allow = re.search(r'sid\s*=\s*"ReadRestApiStages"(.*?)\n  \}', text, re.DOTALL)
+    assert allow, f"{tf_file.name} has no ReadRestApiStages statement"
+    body = allow.group(1)
+    assert re.search(r'actions\s*=\s*\["apigateway:GET"\]', body)
+    arns = set(re.findall(r'"arn:\$\{data\.aws_partition\.current\.partition\}:([^"]+)"', body))
+    assert arns == {"apigateway:*::/restapis", "apigateway:*::/restapis/*/stages"}
+    assert len(re.findall(r'"[^"]+"', body.split("resources")[1])) == len(arns)
+
+
+@pytest.mark.parametrize("tf_file", [TF / "iam.tf", TF / "reader_role" / "main.tf"])
 def test_api_key_values_are_denied(tf_file):
-    # apigateway:GET on "*" is needed for API/stage reads but would also return API key values.
+    # Defence in depth behind the scoped allow: API key values stay explicitly denied.
     text = tf_file.read_text(encoding="utf-8")
     deny = re.search(r'sid\s*=\s*"DenyApiKeyValues"(.*?)\n  \}', text, re.DOTALL)
     assert deny, f"{tf_file.name} has no DenyApiKeyValues statement"
