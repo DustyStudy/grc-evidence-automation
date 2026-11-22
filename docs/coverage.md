@@ -7,7 +7,7 @@ cloud API can supply.
 
 ## SOC 2 (Trust Services Criteria)
 
-13 of 15 technical controls have automated evidence; 23 organizational controls are outside what collectors can evidence.
+12 of 15 technical controls have automated evidence; 23 organizational controls are outside what collectors can evidence.
 
 | Control | Title | Type | Automated evidence from |
 |---|---|---|---|
@@ -46,7 +46,7 @@ cloud API can supply.
 | CC9.2 | Vendor and business-partner risk management | organizational | - |
 | A1.1 | Capacity management | technical (gap) | - |
 | A1.2 | Environmental protections, backups and recovery infrastructure | technical | `aws.backups` |
-| A1.3 | Tests recovery plan procedures | technical | `aws.backups` |
+| A1.3 | Tests recovery plan procedures | technical (gap) | - |
 | C1.1 | Identifies and maintains confidential information | technical | `aws.s3_security`, `aws.encryption_at_rest`, `gcp.storage_buckets` |
 | C1.2 | Disposes of confidential information | organizational | - |
 
