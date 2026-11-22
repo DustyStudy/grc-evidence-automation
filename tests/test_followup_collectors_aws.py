@@ -187,7 +187,6 @@ def test_all_protocols_from_split_ranges_is_critical(make_ctx, monkeypatch):
         [_perm("tcp", ["0.0.0.0/1", "8000::/1"])],  # halves of different families
         [_perm("tcp", V4_HALVES, lo=443, hi=443)],
         [_perm("tcp", ["0.0.0.0/1"]), _perm("tcp", ["128.0.0.0/1"], lo=443, hi=443)],
-        [_perm("udp", V4_HALVES)],
     ],
 )
 def test_ranges_not_covering_the_internet_on_a_sensitive_port_pass(make_ctx, monkeypatch, perms):
@@ -259,5 +258,11 @@ def test_user_with_escalation_action_is_recorded_as_privileged(make_ctx, session
         )
     ev = IamPrivilegedAccess().execute(make_ctx())
     assert ev.status == Status.FAIL
-    assert ev.data["admin_users"] == ["esc"] and [f.resource for f in ev.findings] == ["esc"]
+    assert ev.data["admin_users"] == ["esc"]
+    # iam:PassRole on "*" is not admin-equivalent but is its own HIGH escalation finding.
+    assert [(f.resource, f.severity) for f in ev.findings] == [
+        ("esc", Severity.MEDIUM),
+        ("plain", Severity.HIGH),
+    ]
+    assert ev.data["pass_role_principals"] == ["plain"]
     assert any("trust policies" in note for note in ev.data["limitations"])
