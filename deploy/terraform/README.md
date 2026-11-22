@@ -12,7 +12,8 @@ See the root [README](../../README.md#deploy) for a module call. Key inputs:
 |---|---|
 | `lambda_zip_path` | Package from `scripts/build_lambda.py` |
 | `collector_config` | Accounts, regions, collector include/exclude, thresholds |
-| `extra_sinks` | e.g. an HTTP ingestion sink (secrets by reference) |
+| `extra_sinks` | e.g. an HTTP ingestion sink. `auth.token` and `auth.client_secret` must be references (`env:`, `secretsmanager:`, `ssm:`); a literal fails variable validation at plan |
+| `auditor_principal_arns` | Default `[]`. IAM principals that may read evidence and verify signatures; see Auditor access below |
 | `target_role_arns` | Member-account reader roles the function may assume |
 | `secret_arns` | Secrets Manager secrets the function may read (HTTP sink credentials) |
 | `ssm_parameter_arns`, `ssm_kms_key_arns` | SSM parameters the function may read for `ssm:/path` sink auth references, and the customer-managed KMS keys that encrypt them (SecureString). Both default to `[]` |
@@ -25,6 +26,8 @@ See the root [README](../../README.md#deploy) for a module call. Key inputs:
 ## Notes
 
 - **Bucket policy:** denies non-TLS access and any upload not using SSE-KMS with this stack's customer-managed key. The bundled S3 sink always sends the KMS headers; other writers must too, with `kms_key_id` set to the key ARN (`kms_key_arn` output). An alias or a missing key id is denied.
+- **Auditor access:** `auditor_principal_arns` adds, for those principals only: `s3:GetObject` on `evidence/*` and `s3:ListBucket` limited to the `evidence/` prefix (bucket policy), `kms:Decrypt` on the evidence key only through S3 in this region (`kms:ViaService`), and `kms:Verify` and `kms:GetPublicKey` on the signing key. Nothing is added when the list is empty, and the TLS and encryption denies still apply. Principals in the deploying account need no further policy; principals in another account also need the same actions allowed by IAM in their own account. Their reads appear in the access-log bucket.
+- **Configuration size:** Lambda limits environment variables to 4 KB in total and `GRC_CONFIG` carries the whole configuration, so a precondition on the function fails the run when the JSON reaches 4096 bytes. Configure fewer accounts or split them across more than one deployment. On a first apply the JSON contains the not-yet-created key ARN, so the check runs during apply rather than plan.
 - **Access logging:** S3 server access logs for the evidence bucket go to a second, SSE-S3 bucket (`<bucket>-logs`), because S3 cannot deliver access logs to an SSE-KMS bucket. The function's `GRC_CONFIG` environment variable is encrypted with the same customer-managed key.
 - **Invocation config:** an invocation cannot replace the collector configuration (`{"config": ...}` is rejected) unless you set `GRC_ALLOW_EVENT_CONFIG=true` on the function. Leave it off: the configuration decides which secrets are read and where evidence is sent, and anyone holding `lambda:InvokeFunction` could otherwise redirect both.
 - **Reader role** ([`reader_role/`](reader_role)): apply in each member account. It trusts only the function role, and only with the `ExternalId`. It grants the same read-only action list as the function.

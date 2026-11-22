@@ -16,6 +16,21 @@ data "aws_iam_policy_document" "signing_key" {
       identifiers = ["arn:${local.partition}:iam::${local.account_id}:root"]
     }
   }
+
+  dynamic "statement" {
+    for_each = length(var.auditor_principal_arns) > 0 ? [1] : []
+
+    content {
+      sid       = "AuditorVerifySignatures"
+      actions   = ["kms:Verify", "kms:GetPublicKey"]
+      resources = ["*"]
+
+      principals {
+        type        = "AWS"
+        identifiers = var.auditor_principal_arns
+      }
+    }
+  }
 }
 
 resource "aws_kms_key" "signing" {
