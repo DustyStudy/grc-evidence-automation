@@ -92,7 +92,7 @@ gcp:
   projects: [my-project]             # needs the [gcp] extra and Application Default Credentials
 sinks:
   - {type: local, path: ./evidence}
-  - {type: s3, bucket: my-evidence-bucket, prefix: evidence, kms_key_id: alias/grc-evidence}
+  - {type: s3, bucket: my-evidence-bucket, prefix: evidence, kms_key_id: arn:aws:kms:us-east-1:111111111111:key/...}   # the key ARN; the module's bucket policy denies aliases
   - type: http
     url: https://ingest.example.com/v1/evidence
     format: bundle                   # one POST per run, or per_evidence

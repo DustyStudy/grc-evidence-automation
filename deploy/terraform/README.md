@@ -24,7 +24,7 @@ See the root [README](../../README.md#deploy) for a module call. Key inputs:
 
 ## Notes
 
-- **Bucket policy:** denies non-TLS access and any upload not using SSE-KMS. The bundled S3 sink always sends the KMS headers; other writers must too.
+- **Bucket policy:** denies non-TLS access and any upload not using SSE-KMS with this stack's customer-managed key. The bundled S3 sink always sends the KMS headers; other writers must too, with `kms_key_id` set to the key ARN (`kms_key_arn` output). An alias or a missing key id is denied.
 - **Access logging:** S3 server access logs for the evidence bucket go to a second, SSE-S3 bucket (`<bucket>-logs`), because S3 cannot deliver access logs to an SSE-KMS bucket. The function's `GRC_CONFIG` environment variable is encrypted with the same customer-managed key.
 - **Invocation config:** an invocation cannot replace the collector configuration (`{"config": ...}` is rejected) unless you set `GRC_ALLOW_EVENT_CONFIG=true` on the function. Leave it off: the configuration decides which secrets are read and where evidence is sent, and anyone holding `lambda:InvokeFunction` could otherwise redirect both.
 - **Reader role** ([`reader_role/`](reader_role)): apply in each member account. It trusts only the function role, and only with the `ExternalId`. It grants the same read-only action list as the function.
