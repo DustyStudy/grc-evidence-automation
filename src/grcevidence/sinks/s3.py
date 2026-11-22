@@ -4,11 +4,17 @@ Layout: ``<prefix>/dt=YYYY-MM-DD/<run_id>/<collector>__<account>__<region>.json`
 ``manifest.json`` (written last). Objects are encrypted with SSE-KMS when a key is
 given, otherwise SSE-S3. For immutability, enable S3 Object Lock (default retention)
 on the bucket; the Terraform module in ``deploy/terraform`` can do this.
+
+Optional config key ``expected_bucket_owner`` (12-digit account id, quoted) is sent as
+``ExpectedBucketOwner`` on every call, so a bucket of the same name recreated in another
+account is refused instead of written to. Writes are conditional (``If-None-Match: *``): an
+existing key is never overwritten, the write fails instead.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -25,9 +31,20 @@ class S3Sink:
         prefix: str = "evidence",
         kms_key_id: str | None = None,
         region: str | None = None,
+        expected_bucket_owner: str | None = None,
         session: Any = None,
     ) -> None:
         import boto3
+
+        if expected_bucket_owner is not None and not (
+            isinstance(expected_bucket_owner, str)
+            and re.fullmatch(r"[0-9]{12}", expected_bucket_owner)
+        ):
+            # An unquoted YAML account id is an int and loses leading zeros.
+            raise SinkError("expected_bucket_owner must be a 12-digit account id string")
+        self._owner: dict[str, Any] = (
+            {"ExpectedBucketOwner": expected_bucket_owner} if expected_bucket_owner else {}
+        )
 
         self.bucket = bucket
         self.prefix = prefix.strip("/")
@@ -42,13 +59,23 @@ class S3Sink:
             "Body": (json.dumps(body, indent=2, sort_keys=True) + "\n").encode(),
             "ContentType": "application/json",
             "Metadata": {"sha256": sha256},
+            "IfNoneMatch": "*",  # never overwrite stored evidence
+            **self._owner,
         }
         if self.kms_key_id:
             kwargs["ServerSideEncryption"] = "aws:kms"
             kwargs["SSEKMSKeyId"] = self.kms_key_id
         else:
             kwargs["ServerSideEncryption"] = "AES256"
-        self._s3.put_object(**kwargs)
+        try:
+            self._s3.put_object(**kwargs)
+        except ClientError as exc:
+            if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 412:
+                raise SinkError(
+                    f"S3 write to {self.name} refused: {key} already exists "
+                    "and stored evidence is never overwritten"
+                ) from exc
+            raise
 
     def write(self, run: RunResult) -> int:
         m = run.manifest
@@ -65,12 +92,14 @@ class S3Sink:
         """Sub-prefixes (``delimiter``) or keys under ``prefix``, newest (lexically greatest) first."""
         paginator = self._s3.get_paginator("list_objects_v2")
         if delimiter:
-            pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter="/")
+            pages = paginator.paginate(
+                Bucket=self.bucket, Prefix=prefix, Delimiter="/", **self._owner
+            )
             return sorted(
                 (p["Prefix"] for page in pages for p in page.get("CommonPrefixes", [])),
                 reverse=True,
             )
-        pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix)
+        pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix, **self._owner)
         return sorted((o["Key"] for page in pages for o in page.get("Contents", [])), reverse=True)
 
     def latest_manifest(self, before: str) -> dict[str, Any] | None:
@@ -91,7 +120,9 @@ class S3Sink:
                     run_id, _, name = key[len(partition) :].partition("/")
                     if name != "manifest.json" or not run_id < before:
                         continue
-                    raw = self._s3.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+                    raw = self._s3.get_object(Bucket=self.bucket, Key=key, **self._owner)[
+                        "Body"
+                    ].read()
                     doc = chain_candidate(raw, run_id)
                     if doc is not None:
                         return doc

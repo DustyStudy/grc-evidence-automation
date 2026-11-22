@@ -19,7 +19,7 @@ from grcevidence.catalog import (
     validate_mapping,
 )
 from grcevidence.collectors.base import load_all
-from grcevidence.report import load_run, report_markdown, rollup, verify_run
+from grcevidence.report import latest_run_dir, load_run, report_markdown, rollup, verify_run
 from grcevidence.runner import Config, ConfigError, aws_session, build_sinks, deliver, run
 from grcevidence.sinks import SinkError
 
@@ -113,8 +113,25 @@ def cmd_collect(args: argparse.Namespace) -> int:
 
 def cmd_report(args: argparse.Namespace) -> int:
     try:
-        manifest, evidence = load_run(args.input)
-    except (OSError, KeyError, json.JSONDecodeError) as exc:
+        run_dir = latest_run_dir(Path(args.input))
+        if args.no_verify:
+            print(
+                "warning: run NOT verified (--no-verify); it may have been edited", file=sys.stderr
+            )
+        else:
+            # Hashes only: offline, like the rest of this command. `verify` checks signatures.
+            problems = verify_run(run_dir, check_signature=False).problems
+            for p in problems:
+                print(f"TAMPERED/INCONSISTENT: {p}", file=sys.stderr)
+            if problems:
+                print(
+                    "error: run failed verification and was not rendered "
+                    "(--no-verify renders it anyway)",
+                    file=sys.stderr,
+                )
+                return 1
+        manifest, evidence = load_run(run_dir)
+    except (OSError, KeyError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if args.format == "json":
@@ -225,6 +242,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("input", help="run directory, or a parent of run directories (latest is used)")
     r.add_argument("--framework", choices=FRAMEWORKS, default="soc2")
     r.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    r.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="render even if the run's hashes do not verify (prints a warning)",
+    )
     r.set_defaults(func=cmd_report)
 
     v = sub.add_parser(
