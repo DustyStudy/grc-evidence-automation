@@ -44,6 +44,7 @@ CI installs from hash-pinned files in `requirements/` (`pip install --require-ha
 pip install --require-hashes -r requirements/requirements-lock-tools.txt   # pinned uv
 python scripts/lock.py             # re-resolve what changed, keep other pins
 python scripts/lock.py --upgrade   # move every pin forward
+python scripts/lock.py --check     # what CI runs: writes nothing, exits 1 if a file is stale
 ```
 
 Refresh them with `--upgrade` every so often, and whenever a security alert names a pinned package. Dependabot is deliberately not configured to update them: it bumps single transitive packages in isolation, which leaves the lock inconsistent.

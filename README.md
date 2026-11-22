@@ -114,7 +114,7 @@ sinks:
     auth: {type: bearer, token: "secretsmanager:grc/ingest-token"}
 ```
 
-Unknown keys are errors at the top level, in each `accounts` entry, in `collectors`, `parameters` and `signing`, and in the options of an `s3` or `http` sink. Three places aren't checked, so a typo there is silently ignored: extra keys under `gcp`, extra keys inside an HTTP sink's `auth` block, and extra keys on a `local` sink. Secrets are references (`env:`, `secretsmanager:`, `ssm:`), and bare literals are rejected so credentials cannot end up in the config file. In the Lambda, `ssm:` references work only when their ARNs are passed as `ssm_parameter_arns` (and their KMS keys as `ssm_kms_key_arns`) to the Terraform module.
+Unknown keys are errors at the top level, in each `accounts` entry, in `collectors`, `parameters` and `signing`, and in the options of an `s3` or `http` sink. Three places aren't checked, so a typo there is silently ignored: extra keys under `gcp`, extra keys inside an HTTP sink's `auth` block, and extra keys on a `local` sink. Secrets are references (`env:`, `secretsmanager:`, `ssm:`). A literal `auth.token`, `auth.client_id` or `auth.client_secret` on any sink is refused when the config is loaded, so `collect`, `collect --dry-run` and the Lambda all stop before anything runs, and the error names the field but never the value. An HTTP sink's `headers` are literal strings and aren't checked, so don't put a credential there. In the Lambda, `ssm:` references work only when their ARNs are passed as `ssm_parameter_arns` (and their KMS keys as `ssm_kms_key_arns`) to the Terraform module.
 
 ### Sinks
 
@@ -144,6 +144,16 @@ grc-evidence verify s3://my-evidence-bucket/evidence --key-id <signing_key_arn>
 **The signing key.** It is an asymmetric KMS key, and KMS can't rotate asymmetric keys automatically, so the same key signs for the life of the store. `verify` checks signatures by calling `kms:Verify`; there's no offline check. If the key is deleted (or disabled), every past signature becomes unverifiable. The Terraform module sets `prevent_destroy` on it, so Terraform refuses to delete it, but that doesn't stop a deletion made in the console or the API.
 
 **What an auditor needs for `verify s3://bucket/prefix --key-id <arn>`:** `s3:ListBucket` on the bucket (for the evidence prefix), `s3:GetObject` on the objects under it, and `kms:Verify` on the signing key. Those are the only calls the command makes. Because the module's bucket is SSE-KMS, S3 also requires `kms:Decrypt` on the evidence key to return the objects. With `--skip-signature` no KMS signing-key access is needed. The command downloads every object under the prefix to a temporary directory. [Details](docs/ARCHITECTURE.md#auditor-access-for-verify).
+
+#### Auditor access
+
+The Terraform module can grant that access. `auditor_principal_arns` (default `[]`) takes IAM principal ARNs: roles, users or an account root. For those principals only, it adds:
+
+- `s3:GetObject` on `evidence/*` and `s3:ListBucket` limited to the `evidence/` prefix, in the bucket policy;
+- `kms:Decrypt` on the evidence key, only when the call comes through S3 in the stack's region (`kms:ViaService`);
+- `kms:Verify` and `kms:GetPublicKey` on the signing key.
+
+An empty list adds no statements. The grants are read-only and the bucket's TLS and encryption denies still apply. A principal in another account also needs the same actions allowed by IAM in its own account. These policies pass `terraform validate` and a test that checks each grant is opt-in; they have not been exercised against a live account, and the `kms:ViaService` condition is untested against real S3. See [deploy/terraform/README.md](deploy/terraform/README.md).
 
 ### FIPS endpoints
 
@@ -190,7 +200,9 @@ Invoke once with `{"dry_run": true}` to check that the collectors can read their
 
 - **Configuration** is the `GRC_CONFIG` environment variable: JSON, same schema as the YAML file. The module builds it from `collector_config`, adds the S3 sink, `extra_sinks`, `use_fips_endpoint` and the signing key.
 - **Event keys.** `{"collectors": ["aws.cloudtrail"]}` runs only those collectors for that invocation. `{"dry_run": true}` collects and writes nothing. `{"config": {...}}` is rejected unless the function has `GRC_ALLOW_EVENT_CONFIG=true`; leave that off. The scheduled event carries none of these.
-- **Config size.** Lambda limits all of a function's environment variables to 4 KB in total, and it rejects a function whose variables are larger, so `terraform apply` fails. `GRC_CONFIG` is the only place the handler reads its configuration from, so a large multi-account config has to be made smaller: lean on the top-level `regions` and the defaults, or split the accounts across more than one deployment.
+- **Config size.** Lambda limits all of a function's environment variables to 4 KB in total and rejects a function whose variables are larger. The module checks this itself: a precondition fails the Terraform run when the serialized `GRC_CONFIG` is 4096 bytes or more. It counts the value only, so the real limit can be a few bytes lower. `GRC_CONFIG` is the only place the handler reads its configuration from, so a large multi-account config has to be made smaller: lean on the top-level `regions` and the defaults, or split the accounts across more than one deployment.
+- **Sink secrets in `extra_sinks`.** A literal `auth.token` or `auth.client_secret` fails variable validation; use an `env:`, `secretsmanager:` or `ssm:` reference. The function's config load also rejects a literal `auth.client_id`.
+- **Auditor access.** Set `auditor_principal_arns` to the IAM principals that should read evidence and verify signatures. It is empty by default and then adds nothing. See [Auditor access](#auditor-access).
 - **Timeout and memory** are fixed in the module at 900 seconds (the Lambda maximum) and 512 MB. Collectors run one after another, so run time grows with accounts × regions × regional collectors (global collectors run once per account). Evidence is delivered only after every collector has finished: a run that hits the timeout writes nothing and shows up as a Lambda error. Size the account list per deployment with that in mind, and time a real run before scheduling.
 - **A failed run** (a sink failure, or any `error` record) raises after delivery so the error alarm fires. It is not retried; the next scheduled run is the retry.
 
@@ -211,9 +223,15 @@ The HTTP sink is intentionally vendor-neutral. It POSTs this project's JSON sche
 
 - GCP collectors run from the CLI only. The Lambda artifact doesn't package the google-cloud libraries, and the handler refuses a config with `gcp.projects`.
 - GCP collectors are unit-tested against fakes shaped like the `google-cloud-storage` / `google-cloud-compute` objects and have not been run against a live project by this repo's CI.
-- `aws.iam_privileged_access` doesn't analyse role trust policies, so it doesn't say who can assume an administrator-equivalent role. It doesn't treat `iam:PassRole` or login-profile actions as escalation paths, doesn't subtract explicit Deny statements, and doesn't evaluate SCPs or conditions.
-- `aws.network_exposure` judges security-group rules for all protocols (`-1`) and TCP. UDP and other protocols on sensitive ports aren't checked. It parses source ranges with Python's `ipaddress` and collapses them per IP family, so a non-canonical form (`0::/0`) or a range split into halves (`0.0.0.0/1` plus `128.0.0.0/1`) counts as internet-open. A range that covers most of the internet but not all of it isn't flagged. `gcp.firewall_exposure` has the same limits.
-- The hash chain can fork if two runs overlap against one store: both link to the same predecessor and `verify` reports it. Keep the Lambda's reserved concurrency at 1 and don't run `collect` in parallel against one store.
+- `aws.iam_privileged_access` reports three things: administrator-equivalent principals, `iam:PassRole` on all roles (HIGH), and risky role trust policies (HIGH when any AWS principal can assume the role and the statement has no Condition, MEDIUM when another account can assume it without an `sts:ExternalId` condition). What it still doesn't do:
+  - It doesn't subtract explicit Deny statements or evaluate SCPs, resource control policies or permissions boundaries. Conditions are recorded, not evaluated: a `PassRole` grant with a Condition is still HIGH, any Condition at all silences the wildcard-trust finding, and `sts:ExternalId` is checked for presence only.
+  - `PassRole` is reported only when it covers every role, and only on the user, group or role that holds the policy. Members of a group that holds it aren't listed. Administrator-equivalent principals and service-linked roles aren't reported for it.
+  - Trust policies are checked for wildcard and other-account AWS principals only. Service and federated (SAML, OIDC) principals aren't judged, and it doesn't work out who can reach a trusted principal. A trust statement that uses `NotPrincipal` with no Condition is reported as a wildcard trust.
+  - Login-profile actions aren't treated as escalation paths.
+- `aws.network_exposure` judges security-group rules for all protocols (`-1`), TCP and UDP. TCP and UDP are judged separately, and other protocols (ICMP, for example) aren't checked. It parses source ranges with Python's `ipaddress` and collapses them per IP family, so a non-canonical form (`0::/0`) or a range split into halves (`0.0.0.0/1` plus `128.0.0.0/1`) counts as internet-open. A range that covers most of the internet but not all of it isn't flagged.
+- `gcp.firewall_exposure` is still TCP-only: it reports `all` protocols and TCP (`tcp` or protocol `6`) on sensitive ports, and a UDP rule open to the internet isn't a finding. It sees the same internet-wide source forms as the AWS check: `0.0.0.0/0`, `::/0`, non-canonical forms and split ranges within one rule. It doesn't pool ranges across rules, and a range that covers most of the internet but not all of it isn't flagged.
+- The Lambda execution role's trust policy has no `aws:SourceAccount` or `aws:SourceArn` condition (confused-deputy protection). It was left out on purpose: the AWS documentation checked doesn't confirm that Lambda populates either key when it assumes an execution role, and a condition on a key that isn't populated would stop the function from starting.
+- The hash chain can fork if two runs overlap against one store: both link to the same predecessor and `verify` reports it. Keep the Lambda's reserved concurrency at 1 and don't run `collect` in parallel against one store. See [Lambda concurrency](docs/ARCHITECTURE.md#decisions).
 - The chain is read from the first `local` or `s3` sink only; an HTTP-only config has no chain (see [Sinks](#sinks)).
 - AWS collectors are tested against [moto](https://github.com/getmoto/moto). moto does not model everything (for example `GetBucketPolicyStatus` evaluation), so those paths use stub clients.
 - Resource inspection is capped per collector per region (`max_items_per_check`, default 500) and records say when they were truncated.

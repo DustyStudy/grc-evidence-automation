@@ -56,7 +56,7 @@ sinks:
 
 **URLs.** A URL with userinfo (`user:pass@host`) is rejected. The query string is not inspected and is sent as written, so keep tokens out of it and use `auth`. `headers` values are literal strings, not secret references.
 
-**Failure behavior.** 429 and 5xx retry with exponential backoff (honoring `Retry-After` up to 60 s). Other statuses, including 3xx, fail immediately. The error names the scheme, host and path and the status code; it does not include the query string or the response body. Redirects are never followed. A sink failure does not stop other sinks, and it makes the Lambda invocation fail so the alarm fires.
+**Failure behavior.** 429 and 5xx retry with exponential backoff (honoring `Retry-After` up to 60 s). A connection error or a broken response read (`http.client.HTTPException`, for example `IncompleteRead`) retries with the same backoff and the same idempotency key. Other statuses, including 3xx, fail immediately. The error names the scheme, host and path and the status code; it does not include the query string or the response body. Redirects are never followed. A sink failure does not stop other sinks, and it makes the Lambda invocation fail so the alarm fires.
 
 ## Adapting to a specific platform
 
