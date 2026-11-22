@@ -84,6 +84,9 @@ class GcsBuckets(Collector):
         )
 
 
+_L4_PROTOCOLS = {"tcp": "tcp", "6": "tcp", "udp": "udp", "17": "udp"}
+
+
 @register
 class GcpFirewallExposure(Collector):
     id = "gcp.firewall_exposure"
@@ -108,25 +111,25 @@ class GcpFirewallExposure(Collector):
                 and str(getattr(fw, "direction", "INGRESS")).upper() == "INGRESS"
                 and bool(src)
             )
-            all_protocols = sensitive_tcp = False
+            all_protocols = False
+            sensitive_open: set[str] = set()  # "tcp" / "udp", each judged on its own entries
             for allowed in getattr(fw, "allowed", []) if open_to_internet else []:
                 proto = str(
                     getattr(allowed, "I_p_protocol", None) or getattr(allowed, "ip_protocol", "")
-                ).lower()  # GCP also accepts the IANA number: "6" is tcp
+                ).lower()  # GCP also accepts the IANA number: "6" is tcp, "17" is udp
+                l4 = _L4_PROTOCOLS.get(proto)
                 ports = [str(p) for p in getattr(allowed, "ports", [])]
                 if proto == "all":
                     all_protocols = True
                     findings.append(
                         Finding(fw.name, f"Allows ALL protocols from {src}", Severity.CRITICAL)
                     )
-                elif proto in ("tcp", "6") and (
-                    not ports or any(_port_hits(p, sensitive) for p in ports)
-                ):
-                    sensitive_tcp = True
+                elif l4 and (not ports or any(_port_hits(p, sensitive) for p in ports)):
+                    sensitive_open.add(l4)
                     findings.append(
                         Finding(
                             fw.name,
-                            f"Allows sensitive tcp ports (or all ports) from {src}",
+                            f"Allows sensitive {l4} ports (or all ports) from {src}",
                             Severity.HIGH,
                         )
                     )
@@ -134,10 +137,10 @@ class GcpFirewallExposure(Collector):
                 resource(
                     fw.name,
                     "compute.googleapis.com/Firewall",
-                    not (all_protocols or sensitive_tcp),
+                    not (all_protocols or sensitive_open),
                     open_to_internet=open_to_internet,
                     all_protocols=all_protocols,
-                    sensitive_tcp_open=sensitive_tcp,
+                    sensitive_tcp_open="tcp" in sensitive_open,
                 )
             )
         return Result(
