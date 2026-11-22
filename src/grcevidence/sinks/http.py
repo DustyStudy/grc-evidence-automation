@@ -200,6 +200,11 @@ class HttpSink:
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 last = exc
                 delay = self.backoff * (2**attempt)
+            except http.client.HTTPException as exc:
+                # e.g. IncompleteRead while reading the response. Type only: InvalidURL quotes
+                # the URL, whose query string can carry credentials.
+                last = type(exc).__name__
+                delay = self.backoff * (2**attempt)
             except ValueError as exc:
                 # http.client quotes an invalid header value (possibly the bearer token) in its
                 # message, so report the type only and drop the chained exception.

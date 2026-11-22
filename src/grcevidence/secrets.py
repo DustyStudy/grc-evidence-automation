@@ -21,6 +21,14 @@ class SecretError(ValueError):
     pass
 
 
+def is_reference(value: Any) -> bool:
+    """True for ``env:``, ``secretsmanager:`` or ``ssm:`` references; False for a bare literal."""
+    if not isinstance(value, str):
+        return False
+    scheme, _, rest = value.partition(":")
+    return scheme in {"env", "secretsmanager", "ssm"} and bool(rest)
+
+
 def resolve_secret(ref: str, session: Any = None) -> str:
     scheme, sep, rest = ref.partition(":")
     if not sep or not rest:
