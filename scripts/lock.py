@@ -26,9 +26,11 @@ REQ = "requirements/requirements-"
 # lock name -> uv inputs (files and extras) that make up that lock
 LOCKS: dict[str, list[str]] = {
     "runtime": ["pyproject.toml"],
-    "dev": ["pyproject.toml", "--extra", "dev"],
-    "fuzz": ["pyproject.toml", f"{REQ}fuzz.in"],
-    "release-tools": [f"{REQ}release-tools.in"],
+    "dev": ["pyproject.toml", "--extra", "dev", f"{REQ}build.in"],
+    "fuzz": ["pyproject.toml", f"{REQ}fuzz.in", f"{REQ}build.in"],
+    "gcp": ["pyproject.toml", "--extra", "gcp"],
+    "lambda": [f"{REQ}lambda.in"],  # what the Lambda zip adds to the runtime's boto3
+    "release-tools": [f"{REQ}release-tools.in", f"{REQ}build.in"],
     "lock-tools": [f"{REQ}lock-tools.in"],
 }
 

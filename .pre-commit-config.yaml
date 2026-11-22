@@ -1,0 +1,11 @@
+# Local commit hooks: `pip install pre-commit && pre-commit install`.
+# Revisions are pinned by commit SHA; bump the SHA and the version comment together.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: b9e409b0fee34ee0eee7e6f6a407061f15032926 # v1.109.5
+    hooks:
+      - id: terraform_fmt
