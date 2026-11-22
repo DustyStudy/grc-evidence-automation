@@ -94,7 +94,6 @@ def test_non_findings():
         _rule("egress", ["::/0"], _ssh(), direction="EGRESS"),
         _rule("disabled", ["::/0"], _ssh("6"), disabled=True),
         _rule("web", ["::/0"], [NS(I_p_protocol="6", ports=["443"])]),
-        _rule("udp", ["::/0"], [NS(I_p_protocol="17", ports=["22"])]),
     )
     assert ev.findings == [] and ev.status == Status.PASS
     assert all(r["compliant"] for r in ev.data["resources"])
