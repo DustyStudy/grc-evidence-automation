@@ -41,7 +41,9 @@ sinks:
     bucket: my-evidence-bucket
     prefix: evidence
     # Full key ARN, not an alias: the deploy/terraform bucket policy denies any other value.
+    # Required for that bucket: without kms_key_id the sink writes SSE-S3, which its policy denies.
     kms_key_id: arn:aws:kms:us-east-1:111111111111:key/REPLACE-WITH-KEY-ID
+    # expected_bucket_owner: "111111111111"   # quoted; refuses a same-named bucket in another account
   - type: http
     url: https://ingest.example.com/v1/evidence
     format: bundle

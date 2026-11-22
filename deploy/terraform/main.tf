@@ -66,6 +66,12 @@ resource "aws_kms_key" "evidence" {
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.kms.json
   tags                    = var.tags
+
+  # Losing this key makes the evidence unreadable or unverifiable. To destroy it on purpose,
+  # remove this lifecycle block first.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_kms_alias" "evidence" {
