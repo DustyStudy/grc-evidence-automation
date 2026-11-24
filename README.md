@@ -10,6 +10,8 @@
 
 Read-only Python collectors gather configuration evidence from AWS (and optionally GCP), tag each record with the SOC 2 criteria, ISO 27001 Annex A controls, NIST 800-53 controls and FedRAMP 20x KSIs it is relevant to, seal it with a SHA-256, and deliver it on a schedule to an encrypted S3 evidence store and/or a GRC-platform ingestion API. Deploys as a Lambda with Terraform.
 
+[Collect evidence](#quick-start) · [Verify an evidence set](#integrity-signing-chain-and-verify) · [Auditor permissions](#auditor-access)
+
 **Verified live (an earlier build):** deployed into a member account of a real AWS Organization. A dry run returned 13 control results (5 pass, 7 fail, 1 not applicable), the real run delivered sealed evidence to S3, and `grc-evidence verify` confirmed every hash. That run predates the signing, hash-chain, FIPS and newer collector work, which are covered by unit tests only. The first `terraform apply` exposed a reserved-concurrency bug, now configurable. [Evidence](docs/live-deployment-verification.md).
 
 ```mermaid
@@ -262,10 +264,6 @@ CI also runs `security-scan.yml`: Gitleaks over the full history, Checkov
 against the Terraform (blocking), and Trivy for vulnerable dependencies
 and misconfigurations (reported to the Security tab). Accepted Checkov
 findings are skipped inline in `deploy/terraform/main.tf` with the reason. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Project health
-
-The [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/DustyStudy/grc-evidence-automation) badge reflects a young, solo-maintained project. Code-Review and Contributors need other people, and Maintained scores 0 for any repository under 90 days old. The checks about the code and supply chain (pinned dependencies, fuzzing, signed releases, token permissions, SAST, vulnerabilities) are the informative ones. `codeql-action` is pinned to a full commit SHA like every other action, and Dependabot proposes its updates.
 
 ## License
 
